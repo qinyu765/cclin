@@ -1,8 +1,8 @@
 /**
- * @file LLM client — wraps OpenAI SDK into the CallLLM interface.
+ * @file LLM 客户端 — 将 OpenAI SDK 封装为 CallLLM 接口。
  *
- * Design: Factory function `createCallLLM(config)` returns a `CallLLM`.
- * This makes the LLM dependency injectable and testable.
+ * 设计：工厂函数 `createCallLLM(config)` 返回一个 `CallLLM`。
+ * 这使得 LLM 依赖可注入且可测试。
  */
 
 import OpenAI from 'openai'
@@ -13,7 +13,7 @@ import type {
     LLMResponse,
 } from '../types.js'
 
-// ─── Config ─────────────────────────────────────────────────────────────────
+// ─── 配置 ─────────────────────────────────────────────────────────────────────
 
 export type LLMClientConfig = {
     apiKey: string
@@ -21,10 +21,10 @@ export type LLMClientConfig = {
     model: string
 }
 
-// ─── Internal Helpers ───────────────────────────────────────────────────────
+// ─── 内部工具函数 ───────────────────────────────────────────────────────────────
 
 /**
- * Convert our ChatMessage to the OpenAI SDK message format.
+ * 将 ChatMessage 转换为 OpenAI SDK 消息格式。
  */
 function toOpenAIMessage(
     msg: ChatMessage,
@@ -50,12 +50,12 @@ function toOpenAIMessage(
             tool_call_id: msg.tool_call_id,
         }
     }
-    // system | user
+    // system | user 角色
     return { role: msg.role, content: msg.content }
 }
 
 /**
- * Safely parse JSON tool arguments.
+ * 安全地解析工具调用的 JSON 参数。
  */
 function parseToolArguments(
     raw: string,
@@ -68,7 +68,7 @@ function parseToolArguments(
 }
 
 /**
- * Extract reasoning_content from response (DeepSeek thinking models).
+ * 从响应中提取 reasoning_content（DeepSeek 思考模型）。
  */
 function extractReasoningContent(
     message: OpenAI.Chat.Completions.ChatCompletionMessage | undefined,
@@ -80,12 +80,12 @@ function extractReasoningContent(
     return trimmed.length > 0 ? trimmed : undefined
 }
 
-// ─── Factory ────────────────────────────────────────────────────────────────
+// ─── 工厂函数 ──────────────────────────────────────────────────────────────────
 
 /**
- * Create a `CallLLM` function bound to the given config.
+ * 创建一个绑定指定配置的 `CallLLM` 函数。
  *
- * Usage:
+ * 用法：
  * ```ts
  * const callLLM = createCallLLM({ apiKey, baseURL, model })
  * const response = await callLLM(messages)
@@ -98,16 +98,16 @@ export function createCallLLM(config: LLMClientConfig): CallLLM {
     })
 
     return async (messages, _onChunk?) => {
-        // 1. Convert messages
+        // 1. 转换消息格式
         const openAIMessages = messages.map(toOpenAIMessage)
 
-        // 2. Call API
+        // 2. 调用 API
         const data = await client.chat.completions.create({
             model: config.model,
             messages: openAIMessages,
         })
 
-        // 3. Parse response
+        // 3. 解析响应
         const choice = data.choices?.[0]
         const message = choice?.message
         const reasoningContent = extractReasoningContent(message)
@@ -118,11 +118,11 @@ export function createCallLLM(config: LLMClientConfig): CallLLM {
             total: data.usage?.total_tokens,
         }
 
-        // 4. Build content blocks
+        // 4. 构建内容块
         const content: ContentBlock[] = []
 
         if (message?.tool_calls && message.tool_calls.length > 0) {
-            // Has tool calls
+            // 包含工具调用
             if (message.content) {
                 content.push({ type: 'text', text: message.content })
             }
@@ -145,7 +145,7 @@ export function createCallLLM(config: LLMClientConfig): CallLLM {
                 }
             }
         } else {
-            // Plain text response
+            // 纯文本响应
             const text = message?.content ?? ''
             content.push({ type: 'text', text })
         }

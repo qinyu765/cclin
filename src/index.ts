@@ -1,16 +1,16 @@
 /**
- * @file Entry point — minimal readline REPL to validate LLM integration.
+ * @file 入口文件 — readline REPL，通过 Session 驱动 ReAct 循环。
  *
- * Phase 1 only: single-turn Q&A, no tool execution, no history management.
- * Will be replaced by a proper Session + TUI in later phases.
+ * Phase 2：通过 Session 管理多轮对话，使用 ReAct 循环处理每轮输入。
+ * 后续阶段将替换为正式的 TUI。
  */
 
 import * as readline from 'node:readline'
 import dotenv from 'dotenv'
 import { createCallLLM } from './llm/client.js'
-import type { ChatMessage } from './types.js'
+import { Session } from './runtime/session.js'
 
-// Load .env
+// 加载 .env 环境变量
 dotenv.config()
 
 const apiKey = process.env.OPENAI_API_KEY
@@ -22,27 +22,26 @@ if (!apiKey) {
     process.exit(1)
 }
 
-// Create LLM caller
+// 创建 LLM 调用函数
 const callLLM = createCallLLM({ apiKey, baseURL, model })
 
-// Set up readline
+// 创建 Session（带系统提示词）
+const session = new Session({
+    callLLM,
+    systemPrompt: 'You are a helpful assistant.',
+})
+
+// 初始化 readline 交互接口
 const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
 })
 
-console.log(`\n🤖 cclin Phase 1 — LLM Integration Test`)
+console.log(`\n🤖 cclin Phase 2 — ReAct Loop`)
 console.log(`   Model: ${model}`)
 console.log(`   Base URL: ${baseURL}`)
+console.log(`   Session: ${session.id}`)
 console.log(`   Type "exit" to quit.\n`)
-
-// Conversation history (multi-turn)
-const history: ChatMessage[] = [
-    {
-        role: 'system',
-        content: 'You are a helpful assistant.',
-    },
-]
 
 function prompt(): void {
     rl.question('You: ', async (input) => {
@@ -53,37 +52,35 @@ function prompt(): void {
             return
         }
 
-        // Add user message to history
-        history.push({ role: 'user', content: trimmed })
-
         try {
-            const response = await callLLM(history)
+            const result = await session.runTurn(trimmed)
 
-            // Extract text from response
-            const text = response.content
-                .filter((block) => block.type === 'text')
-                .map((block) => block.text)
-                .join('')
+            // 显示最终回答
+            console.log(`\nAssistant: ${result.finalText}`)
 
-            console.log(`\nAssistant: ${text}`)
+            // 显示步骤摘要
+            const stepCount = result.steps.length
+            const toolSteps = result.steps.filter((s) => s.parsed.action)
+            if (stepCount > 1 || toolSteps.length > 0) {
+                console.log(
+                    `  [steps: ${stepCount}, tool calls: ${toolSteps.length}]`,
+                )
+            }
 
-            // Show token usage
-            if (response.usage) {
-                const u = response.usage
+            // 显示 token 用量
+            if (result.tokenUsage) {
+                const u = result.tokenUsage
                 console.log(
                     `  [tokens: prompt=${u.prompt ?? '?'}, completion=${u.completion ?? '?'}, total=${u.total ?? '?'}]`,
                 )
             }
 
-            // Show reasoning if present
-            if (response.reasoning_content) {
-                console.log(`  [thinking: ${response.reasoning_content.slice(0, 100)}...]`)
+            // 如果出错，显示错误信息
+            if (result.status !== 'ok' && result.errorMessage) {
+                console.log(`  ⚠️ Status: ${result.status}`)
             }
 
             console.log()
-
-            // Add assistant response to history
-            history.push({ role: 'assistant', content: text })
         } catch (err) {
             console.error(`\n❌ Error: ${(err as Error).message}\n`)
         }

@@ -10,27 +10,27 @@
 
 按先后顺序排列，每个 Phase 都产出可运行的中间产物。
 
-### Phase 1: 项目基础 & LLM 集成
+### Phase 1: 项目基础 & LLM 集成 ✅
 **目标**：能成功调用 LLM 并打印响应。
 
-- 初始化项目（package.json / tsconfig.json / .env）
-- 安装核心依赖：`openai`, `typescript`, `tsx`, `dotenv`
-- 定义基础类型：`ChatMessage`, `LLMResponse`, `TokenUsage`
-- 封装 `callLLM()` 函数（支持依赖注入，方便后续替换/测试）
-- 编写简单入口验证 LLM 调用
+- [x] 初始化项目（package.json / tsconfig.json / .env）
+- [x] 安装核心依赖：`openai`, `typescript`, `tsx`, `dotenv`
+- [x] 定义基础类型：`ChatMessage`, `LLMResponse`, `TokenUsage`
+- [x] 封装 `callLLM()` 函数（支持依赖注入，方便后续替换/测试）
+- [x] 编写简单入口验证 LLM 调用
 
 **产出**：`bun run dev` 输入问题 → 拿到 LLM 纯文本回答。
 
 ---
 
-### Phase 2: 手写 ReAct 循环
+### Phase 2: 手写 ReAct 循环 ✅
 **目标**：脱离 SDK 自动循环，自己实现 Think → Act → Observe。
 
-- 定义 `ParsedAssistant` 类型（解析 LLM 响应中的工具调用）
-- 定义 `AgentStepTrace`（单步调试记录）
-- 实现 `runTurn(input)`：while 循环，直到 LLM 不再请求工具
-- `Session` 类管理多轮会话历史
-- 基础 readline REPL 作为临时入口
+- [x] 定义 `ParsedAssistant` 类型（解析 LLM 响应中的工具调用）
+- [x] 定义 `AgentStepTrace`（单步调试记录）
+- [x] 实现 `runTurn(input)`：while 循环，直到 LLM 不再请求工具
+- [x] `Session` 类管理多轮会话历史
+- [x] 基础 readline REPL 作为临时入口
 
 **产出**：输入任务 → Agent 循环调用工具 → 输出最终结果。
 

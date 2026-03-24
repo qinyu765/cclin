@@ -32,23 +32,27 @@ description: cclin Agent 项目开发协作流程
 3. 更新 PLAN.md 标记完成
 4. 开始下一个 Phase
 
+## 代码规范
+- **注释语言**：所有代码注释（包括行注释、块注释、JSDoc）统一使用**中文**
+- **Git 提交信息**：保持**中文**
+
 ## 关键文件
 - `PLAN.md` — 总体计划和进度追踪
-- `src/` — 所有源代码
+- `AGENTS.md` — 项目级 Agent 指令
+- `src/index.ts` — 入口文件
+- `src/types.ts` — 共享类型定义
+- `src/llm/` — LLM 客户端封装
 - `.env` — API Key 配置（不提交 git）
 
 ## 常用命令
 // turbo-all
 ```
 # 安装依赖
-npm install
+pnpm install
 
 # 开发运行
-npx tsx src/index.ts
+pnpm dev
 
 # TypeScript 类型检查
-npx tsc --noEmit
-
-# 运行测试（后续添加）
-npx vitest
+pnpm typecheck
 ```
