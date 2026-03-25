@@ -19,6 +19,15 @@ export type LLMClientConfig = {
     apiKey: string
     baseURL: string
     model: string
+    /** OpenAI function calling tools（可选，Phase 3+）。 */
+    tools?: Array<{
+        type: 'function'
+        function: {
+            name: string
+            description: string
+            parameters: Record<string, unknown>
+        }
+    }>
 }
 
 // ─── 内部工具函数 ───────────────────────────────────────────────────────────────
@@ -105,6 +114,9 @@ export function createCallLLM(config: LLMClientConfig): CallLLM {
         const data = await client.chat.completions.create({
             model: config.model,
             messages: openAIMessages,
+            ...(config.tools && config.tools.length > 0
+                ? { tools: config.tools }
+                : {}),
         })
 
         // 3. 解析响应

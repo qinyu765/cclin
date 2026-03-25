@@ -110,8 +110,10 @@ export type CallLLM = (
  * - `thinking`：思考内容（当 action/final 混合了思考文本时）。
  */
 export type ParsedAssistant = {
-    /** 工具调用：工具名 + 输入参数。 */
+    /** 工具调用：工具名 + 输入参数（第一个工具，保持向后兼容）。 */
     action?: { tool: string; input: unknown }
+    /** 所有工具调用列表（Phase 3+，支持多工具并行调用）。 */
+    actions?: Array<{ tool: string; input: unknown }>
     /** 最终回答文本。 */
     final?: string
     /** 思考内容（混合输出时提取）。 */
@@ -132,6 +134,8 @@ export type AgentStepTrace = {
     parsed: ParsedAssistant
     /** 工具执行结果（如有）。 */
     observation?: string
+    /** 本步骤的实际工具调用数量。 */
+    toolCallCount?: number
     /** 本步骤 token 统计。 */
     tokenUsage?: Partial<TokenUsage>
 }
@@ -166,3 +170,48 @@ export type ExecuteTool = (
     toolName: string,
     toolInput: unknown,
 ) => Promise<string>
+
+// ─── Phase 3: 工具系统类型 ──────────────────────────────────────────────────
+
+/** JSON Schema 子集，用于描述工具输入参数。 */
+export type ToolInputSchema = {
+    type: 'object'
+    properties: Record<string, {
+        type: string
+        description?: string
+        items?: { type: string }
+        enum?: string[]
+        default?: unknown
+    }>
+    required?: string[]
+}
+
+/** 工具执行结果。 */
+export type ToolResult = {
+    /** 输出文本。 */
+    output: string
+    /** 是否为错误结果。 */
+    isError?: boolean
+}
+
+/**
+ * 工具定义接口。
+ *
+ * 每个工具通过此接口描述自身：
+ *   - name / description：用于 LLM 理解工具用途
+ *   - inputSchema：JSON Schema 描述参数格式
+ *   - execute：实际执行逻辑
+ *   - isMutating：是否修改外部状态（用于安全分级）
+ */
+export type ToolDefinition = {
+    /** 工具唯一名称。 */
+    name: string
+    /** 工具描述（给 LLM 阅读）。 */
+    description: string
+    /** 输入参数的 JSON Schema 描述。 */
+    inputSchema: ToolInputSchema
+    /** 是否会修改外部状态（文件、进程等）。 */
+    isMutating: boolean
+    /** 执行工具。 */
+    execute: (input: Record<string, unknown>) => Promise<ToolResult>
+}

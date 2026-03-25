@@ -1,7 +1,7 @@
 /**
  * @file 入口文件 — readline REPL，通过 Session 驱动 ReAct 循环。
  *
- * Phase 2：通过 Session 管理多轮对话，使用 ReAct 循环处理每轮输入。
+ * Phase 3：集成工具系统，Agent 可以读写文件、执行命令。
  * 后续阶段将替换为正式的 TUI。
  */
 
@@ -9,6 +9,12 @@ import * as readline from 'node:readline'
 import dotenv from 'dotenv'
 import { createCallLLM } from './llm/client.js'
 import { Session } from './runtime/session.js'
+import { ToolRegistry } from './tools/registry.js'
+import { readFileTool } from './tools/read-file.js'
+import { writeFileTool } from './tools/write-file.js'
+import { editFileTool } from './tools/edit-file.js'
+import { bashTool } from './tools/bash.js'
+import { listDirectoryTool } from './tools/list-directory.js'
 
 // 加载 .env 环境变量
 dotenv.config()
@@ -22,13 +28,29 @@ if (!apiKey) {
     process.exit(1)
 }
 
-// 创建 LLM 调用函数
-const callLLM = createCallLLM({ apiKey, baseURL, model })
+// 创建工具注册表
+const registry = new ToolRegistry()
+registry.registerMany([
+    readFileTool,
+    writeFileTool,
+    editFileTool,
+    bashTool,
+    listDirectoryTool,
+])
 
-// 创建 Session（带系统提示词）
+// 创建 LLM 调用函数（传入工具定义）
+const callLLM = createCallLLM({
+    apiKey,
+    baseURL,
+    model,
+    tools: registry.toOpenAITools(),
+})
+
+// 创建 Session（传入工具执行函数）
 const session = new Session({
     callLLM,
-    systemPrompt: 'You are a helpful assistant.',
+    systemPrompt: 'You are a helpful coding assistant with access to file and shell tools. Use them to help the user.',
+    executeTool: registry.createExecuteTool(),
 })
 
 // 初始化 readline 交互接口
@@ -37,9 +59,10 @@ const rl = readline.createInterface({
     output: process.stdout,
 })
 
-console.log(`\n🤖 cclin Phase 2 — ReAct Loop`)
+console.log(`\n🤖 cclin Phase 3 — Tool System`)
 console.log(`   Model: ${model}`)
 console.log(`   Base URL: ${baseURL}`)
+console.log(`   Tools: ${registry.size} registered`)
 console.log(`   Session: ${session.id}`)
 console.log(`   Type "exit" to quit.\n`)
 
@@ -60,10 +83,12 @@ function prompt(): void {
 
             // 显示步骤摘要
             const stepCount = result.steps.length
-            const toolSteps = result.steps.filter((s) => s.parsed.action)
-            if (stepCount > 1 || toolSteps.length > 0) {
+            const totalToolCalls = result.steps.reduce(
+                (sum, s) => sum + (s.toolCallCount ?? 0), 0,
+            )
+            if (stepCount > 1 || totalToolCalls > 0) {
                 console.log(
-                    `  [steps: ${stepCount}, tool calls: ${toolSteps.length}]`,
+                    `  [steps: ${stepCount}, tool calls: ${totalToolCalls}]`,
                 )
             }
 

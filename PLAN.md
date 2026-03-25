@@ -36,21 +36,21 @@
 
 ---
 
-### Phase 3: 工具系统
+### Phase 3: 工具系统 ✅
 **目标**：有可用的文件/命令工具，能完成基本编程任务。
 
-- 工具类型定义（`ToolDefinition` + `ToolRegistry`）
-- 工具注册机制
-- 实现 5 个基础工具：
-  - `read_file` — 读取文件（支持 offset/limit 分段）
-  - `write_file` — 写入/创建文件
-  - `edit_file` — 字符串替换
-  - `bash` — 执行 Shell 命令
-  - `list_directory` — 列出目录内容
-- 安全机制：
-  - 危险命令检测（block / confirm / safe 三级）
-  - 路径穿越防护
-  - 敏感文件检测
+- [x] 工具类型定义（`ToolDefinition` + `ToolRegistry`）
+- [x] 工具注册机制
+- [x] 实现 5 个基础工具：
+  - [x] `read_file` — 读取文件（支持 offset/limit 分段）
+  - [x] `write_file` — 写入/创建文件
+  - [x] `edit_file` — 字符串替换
+  - [x] `bash` — 执行 Shell 命令
+  - [x] `list_directory` — 列出目录内容
+- [x] 安全机制：
+  - [x] 危险命令检测（block / confirm / safe 三级）
+  - [x] 路径穿越防护
+  - [x] 敏感文件检测
 
 **产出**：Agent 能读写文件、执行命令，危险操作会暂停等确认。
 

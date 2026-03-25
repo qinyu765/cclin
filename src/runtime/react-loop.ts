@@ -21,6 +21,9 @@ import type {
     TokenUsage,
 } from '../types.js'
 
+/** 单轮对话的最大步骤数，防止无限循环。 */
+const MAX_STEPS = 25
+
 // ─── 响应解析 ─────────────────────────────────────────────────────────────────
 
 /**
@@ -81,6 +84,10 @@ function parseLLMResponse(
                 tool: firstTool.name,
                 input: firstTool.input,
             },
+            actions: toolUseBlocks.map((b) => ({
+                tool: b.name,
+                input: b.input,
+            })),
             thinking: textContent.trim() || undefined,
         }
     }
@@ -164,7 +171,7 @@ export async function runTurn(
     history.push({ role: 'user', content: input })
 
     // 2. ReAct 主循环
-    for (let step = 0; ; step++) {
+    for (let step = 0; step < MAX_STEPS; step++) {
         // 调用 LLM
         let normalized: ReturnType<typeof normalizeLLMResponse>
         try {
@@ -222,32 +229,33 @@ export async function runTurn(
         // 分支判断
         if (parsed.action) {
             // ── Think → Act → Observe ──
-            const toolName = parsed.action.tool
-            const toolInput = parsed.action.input
+            // 执行所有工具调用（LLM 可能一次返回多个）
+            const observations: string[] = []
 
-            console.log(`  🔧 [step ${step}] calling tool: ${toolName}`)
+            for (const block of toolUseBlocks) {
+                console.log(`  🔧 [step ${step}] calling tool: ${block.name}`)
 
-            // 执行工具
-            let observation: string
-            try {
-                observation = await executeTool(toolName, toolInput)
-            } catch (err) {
-                observation = `Tool execution error: ${(err as Error).message}`
+                let observation: string
+                try {
+                    observation = await executeTool(block.name, block.input)
+                } catch (err) {
+                    observation = `Tool execution error: ${(err as Error).message}`
+                }
+
+                observations.push(observation)
+
+                // 每个 tool_call 必须有对应的 tool 消息
+                history.push({
+                    role: 'tool',
+                    content: observation,
+                    tool_call_id: block.id,
+                    name: block.name,
+                })
             }
 
-            // 记录 observation
-            stepTrace.observation = observation
-
-            // 将工具结果追加到历史
-            // 注意：每个 tool_call 必须有对应的 tool 消息
-            const toolCallId =
-                toolUseBlocks[0]?.id ?? `${step}:${toolName}`
-            history.push({
-                role: 'tool',
-                content: observation,
-                tool_call_id: toolCallId,
-                name: toolName,
-            })
+            // 记录第一个工具的 observation（用于 stepTrace）
+            stepTrace.observation = observations.join('\n---\n')
+            stepTrace.toolCallCount = toolUseBlocks.length
 
             // 继续循环（Observe → 下一轮 Think）
             continue
@@ -263,6 +271,13 @@ export async function runTurn(
         finalText =
             textContent || 'No response from LLM.'
         break
+    }
+
+    // 超过最大步骤数保护
+    if (!finalText && status === 'ok') {
+        status = 'error'
+        errorMessage = `Exceeded max steps (${MAX_STEPS}).`
+        finalText = 'I reached the maximum number of steps. Please try a simpler request.'
     }
 
     return {
