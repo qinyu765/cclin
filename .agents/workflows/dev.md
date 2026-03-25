@@ -15,7 +15,8 @@ description: cclin Agent 项目开发协作流程
 2. AI 编写代码（每次最多 2 个文件）
 3. User Review 代码
 4. 运行验证（构建/测试/手动）
-5. 通过后勾选 PLAN.md 中对应项，进入下一项
+5. 通过后勾选 PLAN.md 中对应项
+6. 使用 git-push skill 提交并推送变更，然后进入下一项
 
 ### 手写练习流程
 当 User 想手写某段代码时：
@@ -30,7 +31,8 @@ description: cclin Agent 项目开发协作流程
 1. 当前 Phase 所有功能点完成
 2. 运行完整验证
 3. 更新 PLAN.md 标记完成
-4. 开始下一个 Phase
+4. 使用 git-push skill 提交并推送变更
+5. 开始下一个 Phase
 
 ## 代码规范
 - **注释语言**：所有代码注释（包括行注释、块注释、JSDoc）统一使用**中文**
