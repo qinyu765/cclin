@@ -215,3 +215,68 @@ export type ToolDefinition = {
     /** 执行工具。 */
     execute: (input: Record<string, unknown>) => Promise<ToolResult>
 }
+
+// ─── Phase 4: 审批 & 工具编排类型 ──────────────────────────────────────────────
+
+/** 审批策略：always=每次询问, once=同指纹本轮只问一次, session=整个会话有效。 */
+export type ApprovalPolicy = 'always' | 'once' | 'session'
+
+/** 用户审批决定。 */
+export type ApprovalDecision = 'approve' | 'deny'
+
+/** 审批检查结果（联合类型）。 */
+export type ApprovalCheckResult =
+    | { needsApproval: false }
+    | {
+          needsApproval: true
+          fingerprint: string
+          reason: string
+          toolName: string
+          input: unknown
+      }
+
+/** 审批请求（传给 UI 回调）。 */
+export type ApprovalRequest = {
+    toolName: string
+    input: unknown
+    fingerprint: string
+    reason: string
+}
+
+/** 审批回调钩子。 */
+export type ApprovalHooks = {
+    /** 请求用户审批，返回用户决定。 */
+    requestApproval?: (request: ApprovalRequest) => Promise<ApprovalDecision>
+}
+
+/** 工具调用请求。 */
+export type ToolAction = {
+    id: string
+    name: string
+    input: unknown
+}
+
+/** 单个工具执行状态。 */
+export type ToolActionStatus =
+    | 'success'
+    | 'approval_denied'
+    | 'tool_not_found'
+    | 'input_invalid'
+    | 'execution_failed'
+
+/** 单个工具执行结果。 */
+export type ToolActionResult = {
+    actionId: string
+    tool: string
+    status: ToolActionStatus
+    success: boolean
+    observation: string
+    durationMs: number
+}
+
+/** 批量工具执行结果。 */
+export type ToolExecutionResult = {
+    results: ToolActionResult[]
+    combinedObservation: string
+    hasRejection: boolean
+}

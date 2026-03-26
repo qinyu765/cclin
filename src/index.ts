@@ -10,11 +10,14 @@ import dotenv from 'dotenv'
 import { createCallLLM } from './llm/client.js'
 import { Session } from './runtime/session.js'
 import { ToolRegistry } from './tools/registry.js'
+import { ApprovalManager } from './tools/approval.js'
+import { ToolOrchestrator } from './tools/orchestrator.js'
 import { readFileTool } from './tools/read-file.js'
 import { writeFileTool } from './tools/write-file.js'
 import { editFileTool } from './tools/edit-file.js'
 import { bashTool } from './tools/bash.js'
 import { listDirectoryTool } from './tools/list-directory.js'
+import type { ApprovalRequest, ApprovalDecision } from './types.js'
 
 // 加载 .env 环境变量
 dotenv.config()
@@ -46,11 +49,17 @@ const callLLM = createCallLLM({
     tools: registry.toOpenAITools(),
 })
 
-// 创建 Session（传入工具执行函数）
+// 创建审批管理器和工具编排器
+const approvalManager = new ApprovalManager({ policy: 'once' })
+const orchestrator = new ToolOrchestrator(registry, approvalManager)
+
+// 创建 Session（传入编排器的工具执行函数）
 const session = new Session({
     callLLM,
     systemPrompt: 'You are a helpful coding assistant with access to file and shell tools. Use them to help the user.',
-    executeTool: registry.createExecuteTool(),
+    executeTool: orchestrator.createExecuteTool({
+        requestApproval: createReadlineApproval(),
+    }),
 })
 
 // 初始化 readline 交互接口
@@ -59,10 +68,33 @@ const rl = readline.createInterface({
     output: process.stdout,
 })
 
-console.log(`\n🤖 cclin Phase 3 — Tool System`)
+/**
+ * 创建基于 readline 的审批回调。
+ *
+ * 当 mutating 工具被调用时，向用户展示确认提示。
+ */
+function createReadlineApproval() {
+    return (request: ApprovalRequest): Promise<ApprovalDecision> => {
+        return new Promise((resolve) => {
+            console.log(`\n  🔐 审批请求: ${request.toolName}`)
+            console.log(`     ${request.reason}`)
+            rl.question('     允许执行? (y/n): ', (answer) => {
+                const approved = answer.trim().toLowerCase()
+                resolve(
+                    approved === 'y' || approved === 'yes'
+                        ? 'approve'
+                        : 'deny',
+                )
+            })
+        })
+    }
+}
+
+console.log(`\n🤖 cclin Phase 4 — Approval & Orchestration`)
 console.log(`   Model: ${model}`)
 console.log(`   Base URL: ${baseURL}`)
 console.log(`   Tools: ${registry.size} registered`)
+console.log(`   Approval: once (同指纹本轮只问一次)`)
 console.log(`   Session: ${session.id}`)
 console.log(`   Type "exit" to quit.\n`)
 

@@ -56,14 +56,14 @@
 
 ---
 
-### Phase 4: 审批 & 工具编排
+### Phase 4: 审批 & 工具编排 ✅
 **目标**：为工具执行加上权限控制和统一调度。
 
-- `ApprovalManager`：管理工具审批策略（always / once / never）
-- `ToolOrchestrator`：
+- [x] `ApprovalManager`：管理工具审批策略（always / once / session）
+- [x] `ToolOrchestrator`：
   - 接收工具调用 → 审批 → 执行 → 错误分类 → 结果截断
   - 处理工具输入解析和大小限制
-- 将审批请求暴露为回调（为后续 Hook 化做准备）
+- [x] 将审批请求暴露为回调（为后续 Hook 化做准备）
 
 **产出**：工具执行有统一入口，支持审批策略。
 
