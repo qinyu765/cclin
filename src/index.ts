@@ -1,7 +1,7 @@
 /**
  * @file 入口文件 — readline REPL，通过 Session 驱动 ReAct 循环。
  *
- * Phase 3：集成工具系统，Agent 可以读写文件、执行命令。
+ * Phase 5：集成 Prompt 管理，系统提示词从模板动态组装。
  * 后续阶段将替换为正式的 TUI。
  */
 
@@ -12,6 +12,7 @@ import { Session } from './runtime/session.js'
 import { ToolRegistry } from './tools/registry.js'
 import { ApprovalManager } from './tools/approval.js'
 import { ToolOrchestrator } from './tools/orchestrator.js'
+import { loadSystemPrompt } from './runtime/prompt.js'
 import { readFileTool } from './tools/read-file.js'
 import { writeFileTool } from './tools/write-file.js'
 import { editFileTool } from './tools/edit-file.js'
@@ -30,6 +31,9 @@ if (!apiKey) {
     console.error('❌ Missing OPENAI_API_KEY in .env')
     process.exit(1)
 }
+
+// 使用 async IIFE 包裹启动逻辑（因为 loadSystemPrompt 是异步的）
+;(async () => {
 
 // 创建工具注册表
 const registry = new ToolRegistry()
@@ -53,10 +57,13 @@ const callLLM = createCallLLM({
 const approvalManager = new ApprovalManager({ policy: 'once' })
 const orchestrator = new ToolOrchestrator(registry, approvalManager)
 
+// Phase 5：动态加载系统提示词
+const systemPrompt = await loadSystemPrompt({ cwd: process.cwd() })
+
 // 创建 Session（传入编排器的工具执行函数）
 const session = new Session({
     callLLM,
-    systemPrompt: 'You are a helpful coding assistant with access to file and shell tools. Use them to help the user.',
+    systemPrompt,
     executeTool: orchestrator.createExecuteTool({
         requestApproval: createReadlineApproval(),
     }),
@@ -90,7 +97,7 @@ function createReadlineApproval() {
     }
 }
 
-console.log(`\n🤖 cclin Phase 4 — Approval & Orchestration`)
+console.log(`\n🤖 cclin Phase 5 — Prompt Management`)
 console.log(`   Model: ${model}`)
 console.log(`   Base URL: ${baseURL}`)
 console.log(`   Tools: ${registry.size} registered`)
@@ -147,3 +154,8 @@ function prompt(): void {
 }
 
 prompt()
+
+})().catch((err) => {
+    console.error(`❌ Startup failed: ${(err as Error).message}`)
+    process.exit(1)
+})
