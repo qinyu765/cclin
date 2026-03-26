@@ -82,14 +82,14 @@
 
 ---
 
-### Phase 6: 上下文压缩
+### Phase 6: 上下文压缩 ✅
 **目标**：长对话不会爆上下文窗口。
 
-- `TokenCounter`：本地 token 计数器（tiktoken 或 gpt-tokenizer）
-- 自动压缩阈值检测（可配置 context window 和百分比）
-- LLM 驱动的历史压缩（生成结构化摘要）
-- 压缩后 history 重建
-- 支持手动压缩（`/compact` 命令）
+- [x] `TokenCounter`：本地 token 计数器（gpt-tokenizer）
+- [x] 自动压缩阈值检测（可配置 context window 和百分比）
+- [x] LLM 驱动的历史压缩（生成结构化摘要）
+- [x] 压缩后 history 重建
+- [x] 支持手动压缩（`/compact` 命令）
 
 **产出**：长对话自动压缩，不丢失关键上下文。
 

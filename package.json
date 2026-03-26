@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "dotenv": "^16.4.7",
+    "gpt-tokenizer": "^3.4.0",
     "openai": "^4.78.1"
   },
   "devDependencies": {

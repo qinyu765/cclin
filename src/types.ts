@@ -280,3 +280,43 @@ export type ToolExecutionResult = {
     combinedObservation: string
     hasRejection: boolean
 }
+
+// ─── Phase 6: 上下文压缩类型 ────────────────────────────────────────────────
+
+/** Token 计数器接口。 */
+export type TokenCounter = {
+    /** 使用的 tokenizer 模型名。 */
+    model: string
+    /** 计算纯文本的 token 数。 */
+    countText: (text: string) => number
+    /** 计算消息数组的 token 数（含 ChatML 开销）。 */
+    countMessages: (messages: ChatMessage[]) => number
+    /** 释放 tokenizer 资源。 */
+    dispose: () => void
+}
+
+/** 压缩触发原因。 */
+export type CompactReason = 'auto' | 'manual'
+
+/** 压缩结果状态。 */
+export type CompactStatus = 'success' | 'skipped' | 'failed'
+
+/** 压缩执行结果。 */
+export type CompactResult = {
+    /** 触发原因。 */
+    reason: CompactReason
+    /** 执行状态。 */
+    status: CompactStatus
+    /** 压缩前 token 数。 */
+    beforeTokens: number
+    /** 压缩后 token 数。 */
+    afterTokens: number
+    /** 阈值 token 数。 */
+    thresholdTokens: number
+    /** 缩减百分比。 */
+    reductionPercent: number
+    /** 生成的摘要文本（成功时）。 */
+    summary?: string
+    /** 错误信息（失败时）。 */
+    errorMessage?: string
+}

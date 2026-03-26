@@ -13,6 +13,7 @@ import { ToolRegistry } from './tools/registry.js'
 import { ApprovalManager } from './tools/approval.js'
 import { ToolOrchestrator } from './tools/orchestrator.js'
 import { loadSystemPrompt } from './runtime/prompt.js'
+import { createTokenCounter } from './utils/tokenizer.js'
 import { readFileTool } from './tools/read-file.js'
 import { writeFileTool } from './tools/write-file.js'
 import { editFileTool } from './tools/edit-file.js'
@@ -60,13 +61,19 @@ const orchestrator = new ToolOrchestrator(registry, approvalManager)
 // Phase 5：动态加载系统提示词
 const systemPrompt = await loadSystemPrompt({ cwd: process.cwd() })
 
-// 创建 Session（传入编排器的工具执行函数）
+// Phase 6：创建 Token 计数器
+const tokenCounter = createTokenCounter()
+
+// 创建 Session（传入编排器的工具执行函数 + Token 计数器）
 const session = new Session({
     callLLM,
     systemPrompt,
     executeTool: orchestrator.createExecuteTool({
         requestApproval: createReadlineApproval(),
     }),
+    tokenCounter,
+    contextWindow: 128_000,
+    compactThreshold: 80,
 })
 
 // 初始化 readline 交互接口
@@ -97,20 +104,38 @@ function createReadlineApproval() {
     }
 }
 
-console.log(`\n🤖 cclin Phase 5 — Prompt Management`)
+console.log(`\n🤖 cclin Phase 6 — Context Compression`)
 console.log(`   Model: ${model}`)
 console.log(`   Base URL: ${baseURL}`)
 console.log(`   Tools: ${registry.size} registered`)
 console.log(`   Approval: once (同指纹本轮只问一次)`)
+console.log(`   Context: 128k window, 80% threshold`)
 console.log(`   Session: ${session.id}`)
-console.log(`   Type "exit" to quit.\n`)
+console.log(`   Type "exit" to quit, "/compact" to compress context.\n`)
 
 function prompt(): void {
     rl.question('You: ', async (input) => {
         const trimmed = input.trim()
         if (!trimmed || trimmed.toLowerCase() === 'exit') {
             console.log('Bye! 👋')
+            tokenCounter.dispose()
             rl.close()
+            return
+        }
+
+        // Phase 6：/compact 命令
+        if (trimmed === '/compact') {
+            console.log('\n📦 正在压缩上下文...')
+            const result = await session.compactHistory('manual')
+            if (result.status === 'success') {
+                console.log(`   ✅ 压缩成功: ${result.beforeTokens} → ${result.afterTokens} tokens (减少 ${result.reductionPercent}%)`)
+            } else if (result.status === 'skipped') {
+                console.log(`   ⚠️ 跳过压缩: ${result.errorMessage ?? '无可压缩内容'}`)
+            } else {
+                console.log(`   ❌ 压缩失败: ${result.errorMessage}`)
+            }
+            console.log()
+            prompt()
             return
         }
 

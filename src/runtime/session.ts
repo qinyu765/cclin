@@ -4,13 +4,28 @@
  * Phase 2：持有对话历史和 LLM 调用函数，
  * 委托 `runTurn()` 执行 ReAct 循环。
  *
- * Session 只做状态管理，不包含循环逻辑，
- * 这样循环可独立测试，Session 也容易扩展。
+ * Phase 6：新增上下文压缩能力：
+ *   - 接受 contextWindow / compactThreshold / tokenCounter 配置
+ *   - 暴露 compactHistory() 公开方法
+ *   - 将压缩相关依赖传递给 runTurn()
  */
 
 import { randomUUID } from 'node:crypto'
 import { runTurn } from './react-loop.js'
-import type { CallLLM, ChatMessage, TurnResult, ExecuteTool } from '../types.js'
+import {
+    CONTEXT_COMPACTION_SYSTEM_PROMPT,
+    buildCompactionUserPrompt,
+    buildCompactedHistory,
+} from './compaction.js'
+import type {
+    CallLLM,
+    ChatMessage,
+    TurnResult,
+    ExecuteTool,
+    TokenCounter,
+    CompactReason,
+    CompactResult,
+} from '../types.js'
 
 // ─── Session 配置 ──────────────────────────────────────────────────────────────
 
@@ -24,6 +39,12 @@ export type SessionOptions = {
     executeTool?: ExecuteTool
     /** 自定义 Session ID（默认随机 UUID）。 */
     sessionId?: string
+    /** Token 计数器（Phase 6，启用压缩必需）。 */
+    tokenCounter?: TokenCounter
+    /** 上下文窗口大小（token 数，默认 128000）。 */
+    contextWindow?: number
+    /** 自动压缩阈值百分比（0-100，默认 80）。 */
+    compactThreshold?: number
 }
 
 // ─── Session 类 ──────────────────────────────────────────────────────────────
@@ -54,10 +75,22 @@ export class Session {
     /** 工具执行函数。 */
     private readonly executeTool?: ExecuteTool
 
+    /** Token 计数器。 */
+    private readonly tokenCounter?: TokenCounter
+
+    /** 上下文窗口大小。 */
+    private readonly contextWindow: number
+
+    /** 自动压缩阈值百分比。 */
+    private readonly compactThreshold: number
+
     constructor(options: SessionOptions) {
         this.id = options.sessionId ?? randomUUID()
         this.callLLM = options.callLLM
         this.executeTool = options.executeTool
+        this.tokenCounter = options.tokenCounter
+        this.contextWindow = options.contextWindow ?? 128_000
+        this.compactThreshold = options.compactThreshold ?? 80
 
         // 如果提供了系统提示词，作为历史的第一条消息
         if (options.systemPrompt) {
@@ -82,6 +115,9 @@ export class Session {
             history: this.history,
             callLLM: this.callLLM,
             executeTool: this.executeTool,
+            tokenCounter: this.tokenCounter,
+            contextWindow: this.contextWindow,
+            compactThreshold: this.compactThreshold,
         })
 
         return result
@@ -95,5 +131,117 @@ export class Session {
     /** 获取当前轮次数。 */
     getTurnIndex(): number {
         return this.turnIndex
+    }
+
+    /**
+     * 手动或自动压缩对话历史。
+     *
+     * 流程：
+     *   1. 用 tokenCounter 计算当前 token 数
+     *   2. 提取 system 消息外的历史
+     *   3. 调用 LLM 生成摘要
+     *   4. 用摘要重建历史
+     */
+    async compactHistory(
+        reason: CompactReason = 'manual',
+    ): Promise<CompactResult> {
+        const thresholdTokens = Math.floor(
+            this.contextWindow * (this.compactThreshold / 100),
+        )
+
+        // 无 tokenCounter 时跳过
+        if (!this.tokenCounter) {
+            return {
+                reason,
+                status: 'skipped',
+                beforeTokens: 0,
+                afterTokens: 0,
+                thresholdTokens,
+                reductionPercent: 0,
+                errorMessage: 'No tokenCounter configured',
+            }
+        }
+
+        const beforeTokens = this.tokenCounter.countMessages(this.history)
+        const systemMessage =
+            this.history[0]?.role === 'system' ? this.history[0] : undefined
+        const historyWithoutSystem = systemMessage
+            ? this.history.slice(1)
+            : this.history.slice()
+
+        // 无可压缩内容时跳过
+        if (!historyWithoutSystem.length) {
+            return {
+                reason,
+                status: 'skipped',
+                beforeTokens,
+                afterTokens: beforeTokens,
+                thresholdTokens,
+                reductionPercent: 0,
+            }
+        }
+
+        try {
+            // 调用 LLM 生成摘要
+            const response = await this.callLLM([
+                { role: 'system', content: CONTEXT_COMPACTION_SYSTEM_PROMPT },
+                { role: 'user', content: buildCompactionUserPrompt(historyWithoutSystem) },
+            ])
+
+            // 提取摘要文本
+            const summaryText = response.content
+                .filter((b) => b.type === 'text')
+                .map((b) => (b as { type: 'text'; text: string }).text)
+                .join('')
+                .trim()
+
+            if (!summaryText) {
+                throw new Error('Compaction model returned an empty summary.')
+            }
+
+            // 重建历史
+            const compactedHistory = buildCompactedHistory(
+                systemMessage,
+                summaryText,
+            )
+            const afterTokens =
+                this.tokenCounter.countMessages(compactedHistory)
+            this.history.splice(
+                0,
+                this.history.length,
+                ...compactedHistory,
+            )
+
+            const reductionPercent =
+                beforeTokens > 0
+                    ? Math.max(
+                          0,
+                          Math.round(
+                              ((beforeTokens - afterTokens) / beforeTokens) *
+                                  10_000,
+                          ) / 100,
+                      )
+                    : 0
+
+            return {
+                reason,
+                status: 'success',
+                beforeTokens,
+                afterTokens,
+                thresholdTokens,
+                reductionPercent,
+                summary: summaryText,
+            }
+        } catch (err) {
+            return {
+                reason,
+                status: 'failed',
+                beforeTokens,
+                afterTokens: beforeTokens,
+                thresholdTokens,
+                reductionPercent: 0,
+                errorMessage: (err as Error).message,
+            }
+        }
     }
 }

@@ -19,6 +19,7 @@ import type {
     TurnStatus,
     ExecuteTool,
     TokenUsage,
+    TokenCounter,
 } from '../types.js'
 
 /** 单轮对话的最大步骤数，防止无限循环。 */
@@ -128,6 +129,12 @@ export type RunTurnDeps = {
     callLLM: CallLLM
     /** 工具执行函数（Phase 2 默认 mock）。 */
     executeTool?: ExecuteTool
+    /** Token 计数器（Phase 6，启用压缩必需）。 */
+    tokenCounter?: TokenCounter
+    /** 上下文窗口大小（token 数）。 */
+    contextWindow?: number
+    /** 自动压缩阈值百分比。 */
+    compactThreshold?: number
 }
 
 /** 默认的 mock 工具执行函数。 */
@@ -155,6 +162,7 @@ export async function runTurn(
 ): Promise<TurnResult> {
     const { history, callLLM } = deps
     const executeTool = deps.executeTool ?? defaultExecuteTool
+    const { tokenCounter, contextWindow, compactThreshold } = deps
 
     // 步骤轨迹记录
     const steps: AgentStepTrace[] = []
@@ -172,6 +180,19 @@ export async function runTurn(
 
     // 2. ReAct 主循环
     for (let step = 0; step < MAX_STEPS; step++) {
+        // Phase 6：在调用 LLM 前检测 token 使用量
+        if (tokenCounter && contextWindow && compactThreshold) {
+            const currentTokens = tokenCounter.countMessages(history)
+            const thresholdTokens = Math.floor(
+                contextWindow * (compactThreshold / 100),
+            )
+            if (currentTokens >= thresholdTokens) {
+                console.log(
+                    `  ⚠️ Context usage: ${currentTokens}/${contextWindow} tokens (${Math.round((currentTokens / contextWindow) * 100)}%) — exceeds threshold`,
+                )
+            }
+        }
+
         // 调用 LLM
         let normalized: ReturnType<typeof normalizeLLMResponse>
         try {
