@@ -320,3 +320,114 @@ export type CompactResult = {
     /** 错误信息（失败时）。 */
     errorMessage?: string
 }
+
+// ─── Phase 7: Hook / 中间件类型 ─────────────────────────────────────────────
+
+/** 通用 Hook 回调签名（支持同步/异步）。 */
+export type AgentHookHandler<Payload> = (payload: Payload) => Promise<void> | void
+
+/** Turn 开始时的 Hook 负载。 */
+export type TurnStartHookPayload = {
+    sessionId: string
+    turn: number
+    input: string
+    history: ChatMessage[]
+}
+
+/** 工具调用（action）时的 Hook 负载。 */
+export type ActionHookPayload = {
+    sessionId: string
+    turn: number
+    step: number
+    action: { tool: string; input: unknown }
+    thinking?: string
+    history: ChatMessage[]
+}
+
+/** 工具执行结果（observation）的 Hook 负载。 */
+export type ObservationHookPayload = {
+    sessionId: string
+    turn: number
+    step: number
+    tool: string
+    observation: string
+    history: ChatMessage[]
+}
+
+/** 最终回答的 Hook 负载。 */
+export type FinalHookPayload = {
+    sessionId: string
+    turn: number
+    finalText: string
+    status: TurnStatus
+    steps: AgentStepTrace[]
+    turnUsage: Partial<TokenUsage>
+}
+
+/** 上下文 token 使用量报告的 Hook 负载。 */
+export type ContextUsageHookPayload = {
+    sessionId: string
+    turn: number
+    step: number
+    promptTokens: number
+    contextWindow: number
+    thresholdTokens: number
+    usagePercent: number
+}
+
+/** 上下文压缩完成的 Hook 负载。 */
+export type ContextCompactedHookPayload = {
+    sessionId: string
+    turn: number
+    reason: CompactReason
+    status: CompactStatus
+    beforeTokens: number
+    afterTokens: number
+    thresholdTokens: number
+    reductionPercent: number
+    summary?: string
+    errorMessage?: string
+}
+
+/** 审批请求发出的 Hook 负载。 */
+export type ApprovalHookPayload = {
+    sessionId: string
+    turn: number
+    step: number
+    request: ApprovalRequest
+}
+
+/** 审批结果返回的 Hook 负载。 */
+export type ApprovalResponseHookPayload = {
+    sessionId: string
+    turn: number
+    step: number
+    fingerprint: string
+    decision: ApprovalDecision
+}
+
+/** 标题生成的 Hook 负载（预留）。 */
+export type TitleGeneratedHookPayload = {
+    sessionId: string
+    turn: number
+    title: string
+    originalPrompt: string
+}
+
+/** Hook 集合：一次性注入的生命周期监听器。 */
+export type AgentHooks = {
+    onTurnStart?: AgentHookHandler<TurnStartHookPayload>
+    onAction?: AgentHookHandler<ActionHookPayload>
+    onObservation?: AgentHookHandler<ObservationHookPayload>
+    onFinal?: AgentHookHandler<FinalHookPayload>
+    onContextUsage?: AgentHookHandler<ContextUsageHookPayload>
+    onContextCompacted?: AgentHookHandler<ContextCompactedHookPayload>
+    onApprovalRequest?: AgentHookHandler<ApprovalHookPayload>
+    onApprovalResponse?: AgentHookHandler<ApprovalResponseHookPayload>
+    onTitleGenerated?: AgentHookHandler<TitleGeneratedHookPayload>
+}
+
+/** 中间件：带可选名称的 Hook 集合，支持批量注册多个。 */
+export type AgentMiddleware = AgentHooks & {
+    name?: string
+}

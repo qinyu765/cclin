@@ -95,17 +95,17 @@
 
 ---
 
-### Phase 7: Hook / 中间件系统
+### Phase 7: Hook / 中间件系统 ✅
 **目标**：核心逻辑与 UI/日志解耦。
 
-- 定义 9 种生命周期 Hook：
+- [x] 定义 9 种生命周期 Hook：
   `onTurnStart` / `onAction` / `onObservation` / `onFinal` /
   `onContextUsage` / `onContextCompacted` /
   `onApprovalRequest` / `onApprovalResponse` / `onTitleGenerated`
-- `HookRunnerMap`：Hook 注册表
-- `registerMiddleware()`：批量注册中间件
-- `runHook()`：安全执行 Hook（单个失败不影响主流程）
-- 改造 ReAct 循环，在每个关键节点发射 Hook
+- [x] `HookRunnerMap`：Hook 注册表
+- [x] `registerMiddleware()`：批量注册中间件
+- [x] `runHook()`：安全执行 Hook（单个失败不影响主流程）
+- [x] 改造 ReAct 循环，在每个关键节点发射 Hook
 
 **产出**：核心逻辑可通过 Hook 扩展，无需修改 session_runtime。
 

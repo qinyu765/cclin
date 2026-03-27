@@ -21,6 +21,8 @@ import type {
     TokenUsage,
     TokenCounter,
 } from '../types.js'
+import { runHook, snapshotHistory } from './hooks.js'
+import type { HookRunnerMap } from './hooks.js'
 
 /** 单轮对话的最大步骤数，防止无限循环。 */
 const MAX_STEPS = 25
@@ -135,6 +137,12 @@ export type RunTurnDeps = {
     contextWindow?: number
     /** 自动压缩阈值百分比。 */
     compactThreshold?: number
+    /** Hook 注册表（Phase 7）。 */
+    hookRunners?: HookRunnerMap
+    /** Session ID（供 Hook payload 使用）。 */
+    sessionId?: string
+    /** 当前轮次编号（供 Hook payload 使用）。 */
+    turnIndex?: number
 }
 
 /** 默认的 mock 工具执行函数。 */
@@ -163,6 +171,7 @@ export async function runTurn(
     const { history, callLLM } = deps
     const executeTool = deps.executeTool ?? defaultExecuteTool
     const { tokenCounter, contextWindow, compactThreshold } = deps
+    const { hookRunners, sessionId = '', turnIndex = 0 } = deps
 
     // 步骤轨迹记录
     const steps: AgentStepTrace[] = []
@@ -178,6 +187,16 @@ export async function runTurn(
     // 1. 将用户输入追加到历史
     history.push({ role: 'user', content: input })
 
+    // Phase 7：发射 onTurnStart Hook
+    if (hookRunners) {
+        await runHook(hookRunners, 'onTurnStart', {
+            sessionId,
+            turn: turnIndex,
+            input,
+            history: snapshotHistory(history),
+        })
+    }
+
     // 2. ReAct 主循环
     for (let step = 0; step < MAX_STEPS; step++) {
         // Phase 6：在调用 LLM 前检测 token 使用量
@@ -186,10 +205,17 @@ export async function runTurn(
             const thresholdTokens = Math.floor(
                 contextWindow * (compactThreshold / 100),
             )
-            if (currentTokens >= thresholdTokens) {
-                console.log(
-                    `  ⚠️ Context usage: ${currentTokens}/${contextWindow} tokens (${Math.round((currentTokens / contextWindow) * 100)}%) — exceeds threshold`,
-                )
+            // Phase 7：发射 onContextUsage Hook（替代硬编码 console.log）
+            if (hookRunners) {
+                await runHook(hookRunners, 'onContextUsage', {
+                    sessionId,
+                    turn: turnIndex,
+                    step,
+                    promptTokens: currentTokens,
+                    contextWindow,
+                    thresholdTokens,
+                    usagePercent: Math.round((currentTokens / contextWindow) * 100),
+                })
             }
         }
 
@@ -254,7 +280,17 @@ export async function runTurn(
             const observations: string[] = []
 
             for (const block of toolUseBlocks) {
-                console.log(`  🔧 [step ${step}] calling tool: ${block.name}`)
+                // Phase 7：发射 onAction Hook（替代硬编码 console.log）
+                if (hookRunners) {
+                    await runHook(hookRunners, 'onAction', {
+                        sessionId,
+                        turn: turnIndex,
+                        step,
+                        action: { tool: block.name, input: block.input },
+                        thinking: parsed.thinking,
+                        history: snapshotHistory(history),
+                    })
+                }
 
                 let observation: string
                 try {
@@ -272,6 +308,18 @@ export async function runTurn(
                     tool_call_id: block.id,
                     name: block.name,
                 })
+
+                // Phase 7：发射 onObservation Hook
+                if (hookRunners) {
+                    await runHook(hookRunners, 'onObservation', {
+                        sessionId,
+                        turn: turnIndex,
+                        step,
+                        tool: block.name,
+                        observation,
+                        history: snapshotHistory(history),
+                    })
+                }
             }
 
             // 记录第一个工具的 observation（用于 stepTrace）
@@ -285,6 +333,18 @@ export async function runTurn(
         if (parsed.final) {
             // ── 最终回答 ──
             finalText = parsed.final
+
+            // Phase 7：发射 onFinal Hook
+            if (hookRunners) {
+                await runHook(hookRunners, 'onFinal', {
+                    sessionId,
+                    turn: turnIndex,
+                    finalText,
+                    status: 'ok',
+                    steps,
+                    turnUsage,
+                })
+            }
             break
         }
 

@@ -19,7 +19,7 @@ import { writeFileTool } from './tools/write-file.js'
 import { editFileTool } from './tools/edit-file.js'
 import { bashTool } from './tools/bash.js'
 import { listDirectoryTool } from './tools/list-directory.js'
-import type { ApprovalRequest, ApprovalDecision } from './types.js'
+import type { ApprovalRequest, ApprovalDecision, AgentMiddleware } from './types.js'
 
 // 加载 .env 环境变量
 dotenv.config()
@@ -64,7 +64,33 @@ const systemPrompt = await loadSystemPrompt({ cwd: process.cwd() })
 // Phase 6：创建 Token 计数器
 const tokenCounter = createTokenCounter()
 
-// 创建 Session（传入编排器的工具执行函数 + Token 计数器）
+// Phase 7：创建日志中间件（替代之前硬编码的 console.log）
+const loggerMiddleware: AgentMiddleware = {
+    name: 'logger',
+    onTurnStart: ({ turn, input }) => {
+        console.log(`\n── Turn ${turn} ──`)
+        console.log(`  💬 Input: ${input.slice(0, 80)}${input.length > 80 ? '...' : ''}`)
+    },
+    onAction: ({ step, action }) => {
+        console.log(`  🔧 [step ${step}] calling tool: ${action.tool}`)
+    },
+    onObservation: ({ tool, observation }) => {
+        const preview = observation.slice(0, 120).replace(/\n/g, ' ')
+        console.log(`  📎 [${tool}] ${preview}${observation.length > 120 ? '...' : ''}`)
+    },
+    onContextUsage: ({ promptTokens, contextWindow, usagePercent, thresholdTokens }) => {
+        if (promptTokens >= thresholdTokens) {
+            console.log(`  ⚠️ Context: ${promptTokens}/${contextWindow} tokens (${usagePercent}%) — exceeds threshold`)
+        }
+    },
+    onContextCompacted: ({ status, beforeTokens, afterTokens, reductionPercent }) => {
+        if (status === 'success') {
+            console.log(`  📦 Compacted: ${beforeTokens} → ${afterTokens} tokens (-${reductionPercent}%)`)
+        }
+    },
+}
+
+// 创建 Session（传入编排器的工具执行函数 + Token 计数器 + 中间件）
 const session = new Session({
     callLLM,
     systemPrompt,
@@ -74,6 +100,7 @@ const session = new Session({
     tokenCounter,
     contextWindow: 128_000,
     compactThreshold: 80,
+    middlewares: [loggerMiddleware],
 })
 
 // 初始化 readline 交互接口
@@ -104,12 +131,13 @@ function createReadlineApproval() {
     }
 }
 
-console.log(`\n🤖 cclin Phase 6 — Context Compression`)
+console.log(`\n🤖 cclin Phase 7 — Hook / Middleware System`)
 console.log(`   Model: ${model}`)
 console.log(`   Base URL: ${baseURL}`)
 console.log(`   Tools: ${registry.size} registered`)
 console.log(`   Approval: once (同指纹本轮只问一次)`)
 console.log(`   Context: 128k window, 80% threshold`)
+console.log(`   Middlewares: ${1} registered (logger)`)
 console.log(`   Session: ${session.id}`)
 console.log(`   Type "exit" to quit, "/compact" to compress context.\n`)
 
@@ -144,17 +172,6 @@ function prompt(): void {
 
             // 显示最终回答
             console.log(`\nAssistant: ${result.finalText}`)
-
-            // 显示步骤摘要
-            const stepCount = result.steps.length
-            const totalToolCalls = result.steps.reduce(
-                (sum, s) => sum + (s.toolCallCount ?? 0), 0,
-            )
-            if (stepCount > 1 || totalToolCalls > 0) {
-                console.log(
-                    `  [steps: ${stepCount}, tool calls: ${totalToolCalls}]`,
-                )
-            }
 
             // 显示 token 用量
             if (result.tokenUsage) {

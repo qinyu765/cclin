@@ -17,6 +17,8 @@ import {
     buildCompactionUserPrompt,
     buildCompactedHistory,
 } from './compaction.js'
+import { buildHookRunners, runHook } from './hooks.js'
+import type { HookRunnerMap } from './hooks.js'
 import type {
     CallLLM,
     ChatMessage,
@@ -25,6 +27,8 @@ import type {
     TokenCounter,
     CompactReason,
     CompactResult,
+    AgentHooks,
+    AgentMiddleware,
 } from '../types.js'
 
 // ─── Session 配置 ──────────────────────────────────────────────────────────────
@@ -45,6 +49,10 @@ export type SessionOptions = {
     contextWindow?: number
     /** 自动压缩阈值百分比（0-100，默认 80）。 */
     compactThreshold?: number
+    /** Hook 集合（Phase 7，一次性注入）。 */
+    hooks?: AgentHooks
+    /** 中间件列表（Phase 7，支持多个）。 */
+    middlewares?: AgentMiddleware[]
 }
 
 // ─── Session 类 ──────────────────────────────────────────────────────────────
@@ -84,6 +92,9 @@ export class Session {
     /** 自动压缩阈值百分比。 */
     private readonly compactThreshold: number
 
+    /** Hook 注册表。 */
+    private readonly hookRunners: HookRunnerMap
+
     constructor(options: SessionOptions) {
         this.id = options.sessionId ?? randomUUID()
         this.callLLM = options.callLLM
@@ -91,6 +102,7 @@ export class Session {
         this.tokenCounter = options.tokenCounter
         this.contextWindow = options.contextWindow ?? 128_000
         this.compactThreshold = options.compactThreshold ?? 80
+        this.hookRunners = buildHookRunners(options.hooks, options.middlewares)
 
         // 如果提供了系统提示词，作为历史的第一条消息
         if (options.systemPrompt) {
@@ -109,7 +121,6 @@ export class Session {
      */
     async runTurn(input: string): Promise<TurnResult> {
         this.turnIndex += 1
-        console.log(`\n── Turn ${this.turnIndex} ──`)
 
         const result = await runTurn(input, {
             history: this.history,
@@ -118,6 +129,9 @@ export class Session {
             tokenCounter: this.tokenCounter,
             contextWindow: this.contextWindow,
             compactThreshold: this.compactThreshold,
+            hookRunners: this.hookRunners,
+            sessionId: this.id,
+            turnIndex: this.turnIndex,
         })
 
         return result
@@ -222,6 +236,19 @@ export class Session {
                           ) / 100,
                       )
                     : 0
+
+            // Phase 7：发射 onContextCompacted Hook
+            await runHook(this.hookRunners, 'onContextCompacted', {
+                sessionId: this.id,
+                turn: this.turnIndex,
+                reason,
+                status: 'success',
+                beforeTokens,
+                afterTokens,
+                thresholdTokens,
+                reductionPercent,
+                summary: summaryText,
+            })
 
             return {
                 reason,
