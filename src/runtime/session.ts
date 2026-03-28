@@ -129,6 +129,7 @@ export class Session {
             tokenCounter: this.tokenCounter,
             contextWindow: this.contextWindow,
             compactThreshold: this.compactThreshold,
+            compactFn: () => this.compactHistory('auto'),
             hookRunners: this.hookRunners,
             sessionId: this.id,
             turnIndex: this.turnIndex,

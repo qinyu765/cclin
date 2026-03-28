@@ -20,6 +20,7 @@ import type {
     ExecuteTool,
     TokenUsage,
     TokenCounter,
+    CompactResult,
 } from '../types.js'
 import { runHook, snapshotHistory } from './hooks.js'
 import type { HookRunnerMap } from './hooks.js'
@@ -137,6 +138,8 @@ export type RunTurnDeps = {
     contextWindow?: number
     /** 自动压缩阈值百分比。 */
     compactThreshold?: number
+    /** 自动压缩回调（由 Session 注入）。 */
+    compactFn?: () => Promise<CompactResult>
     /** Hook 注册表（Phase 7）。 */
     hookRunners?: HookRunnerMap
     /** Session ID（供 Hook payload 使用）。 */
@@ -216,6 +219,11 @@ export async function runTurn(
                     thresholdTokens,
                     usagePercent: Math.round((currentTokens / contextWindow) * 100),
                 })
+            }
+
+            // Phase 6：超阈值自动压缩
+            if (currentTokens >= thresholdTokens && deps.compactFn) {
+                await deps.compactFn()
             }
         }
 
