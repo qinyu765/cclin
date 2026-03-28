@@ -361,22 +361,47 @@ this.history.splice(0, this.history.length, ...compactedHistory)
 
 因为 `history` 是 `readonly` 属性——构造时用 `readonly history: ChatMessage[] = []` 声明。`readonly` 阻止重新赋值，但不阻止就地修改（push, splice 等）。这保证了外部持有的 history 引用不会断裂——无论是 Session 还是 runTurn 中的 deps.history，都指向同一个数组。
 
-### 4.5 ReAct 循环中的检测逻辑
+### 4.5 ReAct 循环中的检测与自动压缩
 
 ```typescript
-// react-loop.ts 中的检测
+// react-loop.ts 中的检测 + 自动触发
 if (tokenCounter && contextWindow && compactThreshold) {
     const currentTokens = tokenCounter.countMessages(history)
     const thresholdTokens = Math.floor(
         contextWindow * (compactThreshold / 100),
     )
-    if (currentTokens >= thresholdTokens) {
-        console.log(`  ⚠️ Context usage: ... exceeds threshold`)
+    // 发射 onContextUsage Hook（Phase 7）
+    if (hookRunners) {
+        await runHook(hookRunners, 'onContextUsage', { ... })
+    }
+    // 超阈值自动压缩
+    if (currentTokens >= thresholdTokens && deps.compactFn) {
+        await deps.compactFn()
     }
 }
 ```
 
-当前设计中，ReAct 循环**只做检测和日志**，不直接触发压缩。这是有意的简化——自动压缩的完整集成（自动调用 `compactHistory`）需要 Phase 7 的 Hook 系统来优雅实现，否则 react-loop 需要反向引用 Session，破坏了当前的"纯函数"设计。
+**如何在不破坏纯函数设计的前提下触发压缩？**
+
+`runTurn` 是纯函数，不持有 Session 引用，无法直接调用 `session.compactHistory()`。解决方法是**依赖注入一个 `compactFn` 回调**：
+
+```typescript
+// RunTurnDeps 中新增
+export type RunTurnDeps = {
+    // ...其他字段
+    compactFn?: () => Promise<CompactResult>  // 由 Session 注入
+}
+
+// Session.runTurn() 中注入
+const result = await runTurn(input, {
+    // ...其他依赖
+    compactFn: () => this.compactHistory('auto'),
+})
+```
+
+Session 把自己的 `compactHistory` 方法包装为箭头函数传入，react-loop 只管调用这个回调，不需要知道 Session 的存在。这样既保持了纯函数设计，又完成了自动压缩的闭环。
+
+这是**依赖注入模式**的典型应用——react-loop 只依赖 `() => Promise<CompactResult>` 这个函数签名，不关心谁实现的。
 
 ---
 
@@ -503,7 +528,7 @@ if (!trimmed || trimmed.toLowerCase() === 'exit') {
 | `src/utils/tokenizer.ts` | **新建** | 80 | gpt-tokenizer 封装 |
 | `src/runtime/compaction.ts` | **新建** | 141 | 压缩提示词 + 历史转换 + 重建 |
 | `src/runtime/session.ts` | 修改 | +115 | compactHistory() + 配置 |
-| `src/runtime/react-loop.ts` | 修改 | +15 | Token 使用量检测 |
+| `src/runtime/react-loop.ts` | 修改 | +20 | Token 使用量检测 + 超阈值自动压缩触发 |
 | `src/index.ts` | 修改 | +20 | /compact 命令 + tokenCounter |
 
-**下一步**：Phase 7 将实现 **Hook / 中间件系统**，届时可以将自动压缩做成一个 Hook——当 `onContextUsage` 检测到超限时，自动触发 `compactHistory`，而无需修改 ReAct 循环的核心代码。
+**后续演进**：Phase 7 实现了 Hook / 中间件系统，`onContextUsage` Hook 提供 token 使用量通知，自动压缩则通过 `compactFn` 依赖注入完成，无需修改 ReAct 循环核心代码。
