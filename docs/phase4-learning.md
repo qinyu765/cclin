@@ -267,6 +267,8 @@ recordDecision(fingerprint: string, decision: ApprovalDecision): void {
 | `onceGrants` | `policy === 'once'` 且用户批准 | `clearOnceApprovals()`（Turn 结束） | 本轮审批免问 |
 | `sessionGrants` | `policy === 'session'` 且用户批准 | `dispose()`（Session 结束） | 整个会话免问 |
 
+> **落地细节**：为了让 `clearOnceApprovals()` 真正能在 Turn 结束时被调用，我们在 `SessionOptions` 和 `RunTurnDeps` 中注入了 `clearApprovalsFn` 回调，并在 `react-loop.ts` 的最后主动调用它（解决"本轮一次"变"全局一次"的 Bug）。
+
 > **设计洞察**：两个 Set 的关系不是"或"，而是"层级"。
 > 检查时 `isGranted()` 查两个 Set，只要任一包含就放行。
 > 这样 `session` 策略的授权在 `clearOnceApprovals()` 后仍有效。

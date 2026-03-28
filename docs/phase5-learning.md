@@ -226,6 +226,7 @@ export async function loadSystemPrompt(options = {}) {
         user: resolveUsername(),
         pwd: cwd,
         soul_section: soulSection,
+        tools: options.toolsText ?? '', // ← 注入工具描述
     })
 
     // 4. Fallback 追加 SOUL
@@ -246,11 +247,15 @@ export async function loadSystemPrompt(options = {}) {
 ```typescript
 export type LoadSystemPromptOptions = {
     cwd?: string
+    toolsText?: string
 }
 ```
 
 在测试环境（Test runner）中，`process.cwd()` 可能指向的是项目根目录（运行测试的地方），而不是模拟的工作目录。
 传递 `cwd` 允许调用方指定"当前工作目录到底在哪"，方便写测试和处理 multi-workspace 场景。
+
+**关于 `toolsText` 的注入**：
+由于工具是由 `ToolRegistry` 动态注册的，我们在 `prompt.md` 中留下了 `{{tools}}` 占位符。在组装阶段，外部通过 `registry.toMarkdown()` 生成工具的 Markdown 描述表格，并作为 `toolsText` 传入 `loadSystemPrompt`，从而让 LLM 获得精准的可用工具列表及其 Schema。
 
 ---
 

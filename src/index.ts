@@ -155,11 +155,11 @@ console.log(`\n🤖 cclin Phase 7 — Hook / Middleware System`)
 console.log(`   Model: ${model}`)
 console.log(`   Base URL: ${baseURL}`)
 console.log(`   Tools: ${registry.size} registered`)
-console.log(`   Approval: once (同指纹本轮只问一次)`)
+console.log(`   Approval: ${approvalManager.policy} (可以通过 /approve 切换)`)
 console.log(`   Context: 128k window, 80% threshold`)
 console.log(`   Middlewares: ${1} registered (logger)`)
 console.log(`   Session: ${session.id}`)
-console.log(`   Type "exit" to quit, "/compact" to compress context.\n`)
+console.log(`   Type "exit" to quit, "/compact" to clear history, "/approve <mode>" to change policy.\n`)
 
 function prompt(): void {
     rl.question('You: ', async (input) => {
@@ -183,6 +183,20 @@ function prompt(): void {
                 console.log(`   ❌ 压缩失败: ${result.errorMessage}`)
             }
             console.log()
+            prompt()
+            return
+        }
+
+        // Phase 4 扩展：/approve 命令切换审批策略
+        if (trimmed.startsWith('/approve')) {
+            const args = trimmed.split(' ')
+            const mode = args[1]?.toLowerCase()
+            if (['always', 'once', 'session'].includes(mode)) {
+                approvalManager.policy = mode as 'always' | 'once' | 'session'
+                console.log(`\n🛡️ 审批策略已切换为: ${mode}\n`)
+            } else {
+                console.log(`\n⚠️ 未知策略。可用策略: always, once, session\n   当前策略: ${approvalManager.policy}\n`)
+            }
             prompt()
             return
         }

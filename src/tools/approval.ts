@@ -67,7 +67,7 @@ export type ApprovalManagerOptions = {
  *   - 支持按轮次或会话级别的授权生命周期
  */
 export class ApprovalManager {
-    private readonly policy: ApprovalPolicy
+    private _policy: ApprovalPolicy
 
     /** once 级别授权缓存（Turn 结束时清除）。 */
     private onceGrants: Set<string> = new Set()
@@ -76,7 +76,21 @@ export class ApprovalManager {
     private sessionGrants: Set<string> = new Set()
 
     constructor(options: ApprovalManagerOptions = {}) {
-        this.policy = options.policy ?? 'once'
+        this._policy = options.policy ?? 'once'
+    }
+
+    /** 获取当前策略。 */
+    get policy(): ApprovalPolicy {
+        return this._policy
+    }
+
+    /**
+     * 动态切换审批策略。
+     * 切换策略时会自动清空旧的授权缓存，防止状态混乱。
+     */
+    set policy(newPolicy: ApprovalPolicy) {
+        this._policy = newPolicy
+        this.dispose() // 清空原有的授权
     }
 
     /**
@@ -118,9 +132,9 @@ export class ApprovalManager {
     ): void {
         if (decision !== 'approve') return
 
-        if (this.policy === 'once') {
+        if (this._policy === 'once') {
             this.onceGrants.add(fingerprint)
-        } else if (this.policy === 'session') {
+        } else if (this._policy === 'session') {
             this.sessionGrants.add(fingerprint)
         }
         // always 策略不缓存

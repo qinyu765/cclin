@@ -385,6 +385,9 @@ runTurn(input, deps)
             ├── if (有工具调用)
             │   ├── for (每个工具)
             │   │   ├── 🔔 onAction ← 工具调用前
+            │   │   ├── (Orchestrator 发起审批请求)
+            │   │   │   ├── 🔔 onApprovalRequest ← *外部触发*
+            │   │   │   └── 🔔 onApprovalResponse ← *外部触发*
             │   │   ├── executeTool()
             │   │   └── 🔔 onObservation ← 工具执行后
             │   └── continue
@@ -393,6 +396,11 @@ runTurn(input, deps)
                 ├── 🔔 onFinal ← 回答产生
                 └── break
 ```
+
+> **特别说明：为什么 `onApprovalRequest` / `onApprovalResponse` / `onTitleGenerated` 没有出现在上图的主干中？**
+> 因为这些事件不由底层的 `react-loop.ts` 直接发射：
+> - 审批事件是由 **外部 UI 交互层**（如 `index.ts` 中的 `createReadlineApproval` 闭包）在与用户互动的首尾主动发射的。为此我们给 `Session` 实例暴露出 `@internal` 的 `_runHook` 方法，允许外部系统将事件注入回循环的生命周期中。
+> - `onTitleGenerated` 则是在 `session.ts` 顶层，由外界调用 `session.generateTitle()` 时生成并发射。
 
 **为什么 `onAction` 在 `executeTool()` 之前而不是之后？**
 
