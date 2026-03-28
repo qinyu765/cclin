@@ -125,14 +125,15 @@
 
 ---
 
-### Phase 9: 工具路由 & MCP
+### Phase 9: 工具路由 & MCP ✅
 **目标**：支持外部 MCP 工具，统一工具管理。
 
-- `NativeToolRegistry`：内置工具管理
-- `McpToolRegistry`：MCP Server 连接和工具发现
-- `ToolRouter`：统一路由（优先 native，fallback mcp）
-- MCP 配置加载（`mcp_config.json`）
-- 工具描述自动生成（分 Native / MCP 两组注入 prompt）
+- [x] `ToolRouter`：统一路由（优先 native，fallback mcp）
+- [x] `McpToolRegistry`：MCP Server 连接和工具发现
+- [x] `McpClientPool`：MCP 连接池管理（stdio 传输）
+- [x] MCP 配置加载（`mcp_config.json`）
+- [x] 工具描述自动生成（分 Native / MCP 两组注入 prompt）
+- [x] `ToolOrchestrator` 改用 `ToolQueryable` 接口
 
 **产出**：可通过配置文件接入任意 MCP Server 的工具。
 

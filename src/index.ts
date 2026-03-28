@@ -11,9 +11,10 @@ import { render } from 'ink'
 import dotenv from 'dotenv'
 import { createCallLLM } from './llm/client.js'
 import { Session } from './runtime/session.js'
-import { ToolRegistry } from './tools/registry.js'
 import { ApprovalManager } from './tools/approval.js'
 import { ToolOrchestrator } from './tools/orchestrator.js'
+import { ToolRouter } from './tools/router.js'
+import { loadMcpConfig } from './tools/mcp-config.js'
 import { loadSystemPrompt } from './runtime/prompt.js'
 import { createTokenCounter } from './utils/tokenizer.js'
 import { readFileTool } from './tools/read-file.js'
@@ -43,9 +44,9 @@ if (!apiKey) {
 // 使用 async IIFE 包裹启动逻辑
 ;(async () => {
 
-// 创建工具注册表
-const registry = new ToolRegistry()
-registry.registerMany([
+// 创建工具路由器（统一管理内置 + MCP 工具）
+const router = new ToolRouter()
+router.registerNativeTools([
     readFileTool,
     writeFileTool,
     editFileTool,
@@ -53,22 +54,28 @@ registry.registerMany([
     listDirectoryTool,
 ])
 
+// 加载 MCP 配置并连接 MCP Server
+const mcpConfig = await loadMcpConfig()
+if (Object.keys(mcpConfig).length > 0) {
+    await router.loadMcpServers(mcpConfig)
+}
+
 // 创建 LLM 调用函数
 const callLLM = createCallLLM({
     apiKey,
     baseURL,
     model,
-    tools: registry.toOpenAITools(),
+    tools: router.toOpenAITools(),
 })
 
 // 创建审批管理器和工具编排器
 const approvalManager = new ApprovalManager({ policy: 'once' })
-const orchestrator = new ToolOrchestrator(registry, approvalManager)
+const orchestrator = new ToolOrchestrator(router, approvalManager)
 
 // 动态加载系统提示词
 const systemPrompt = await loadSystemPrompt({
     cwd: process.cwd(),
-    toolsText: registry.toMarkdown(),
+    toolsText: router.toMarkdown(),
 })
 
 // 创建 Token 计数器
@@ -105,6 +112,7 @@ const handleSubmit = async (input: string) => {
 
 const handleExit = () => {
     tokenCounter.dispose()
+    router.dispose().catch(() => { /* ignore */ })
 }
 
 const handleMiddlewareReady = (mw: AgentMiddleware) => {
@@ -135,7 +143,7 @@ const app = render(
     React.createElement(App, {
         model,
         baseURL,
-        toolCount: registry.size,
+        toolCount: router.getToolCount().total,
         approvalPolicy: approvalManager.policy,
         onSubmit: handleSubmit,
         onExit: handleExit,

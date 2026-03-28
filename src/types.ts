@@ -431,3 +431,43 @@ export type AgentHooks = {
 export type AgentMiddleware = AgentHooks & {
     name?: string
 }
+
+// ─── Phase 9: 工具路由 & MCP 类型 ────────────────────────────────────────────
+
+/** 工具来源标识。 */
+export type ToolSource = 'native' | 'mcp'
+
+/** MCP Server 配置（stdio 传输）。 */
+export type MCPServerConfig = {
+    /** 启动命令（如 'node', 'npx'）。 */
+    command: string
+    /** 命令参数列表。 */
+    args?: string[]
+    /** 环境变量覆盖（会与 process.env 合并）。 */
+    env?: Record<string, string>
+}
+
+/** MCP 配置文件的完整格式。 */
+export type MCPConfigFile = {
+    mcpServers?: Record<string, MCPServerConfig>
+}
+
+/** MCP 工具定义（继承 ToolDefinition，增加来源信息）。 */
+export type McpToolDefinition = ToolDefinition & {
+    /** 工具来源。 */
+    source: 'mcp'
+    /** 所属 MCP Server 名称。 */
+    serverName: string
+    /** 在 MCP Server 上的原始工具名。 */
+    originalName: string
+}
+
+/**
+ * 工具查询接口（ToolOrchestrator 的依赖抽象）。
+ *
+ * 让 ToolOrchestrator 同时支持 ToolRegistry 和 ToolRouter。
+ */
+export type ToolQueryable = {
+    /** 根据工具名获取工具定义。 */
+    get(name: string): ToolDefinition | undefined
+}

@@ -20,8 +20,8 @@ import type {
     ToolActionResult,
     ToolActionStatus,
     ToolExecutionResult,
+    ToolQueryable,
 } from '../types.js'
-import type { ToolRegistry } from './registry.js'
 import type { ApprovalManager } from './approval.js'
 
 /** 工具输出最大字符数（超过则截断）。 */
@@ -89,7 +89,7 @@ function classifyError(err: unknown): ToolActionStatus {
  */
 export class ToolOrchestrator {
     constructor(
-        private readonly registry: ToolRegistry,
+        private readonly registry: ToolQueryable,
         private readonly approvalManager: ApprovalManager,
     ) {}
 
