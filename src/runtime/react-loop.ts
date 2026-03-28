@@ -146,6 +146,8 @@ export type RunTurnDeps = {
     sessionId?: string
     /** 当前轮次编号（供 Hook payload 使用）。 */
     turnIndex?: number
+    /** 清理本轮一次性授权（Turn 结束时调用）。 */
+    clearApprovalsFn?: () => void
 }
 
 /** 默认的 mock 工具执行函数。 */
@@ -367,6 +369,11 @@ export async function runTurn(
         status = 'error'
         errorMessage = `Exceeded max steps (${MAX_STEPS}).`
         finalText = 'I reached the maximum number of steps. Please try a simpler request.'
+    }
+
+    // Turn 结束，清理本轮授权
+    if (deps.clearApprovalsFn) {
+        deps.clearApprovalsFn()
     }
 
     return {

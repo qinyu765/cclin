@@ -53,6 +53,8 @@ export type SessionOptions = {
     hooks?: AgentHooks
     /** 中间件列表（Phase 7，支持多个）。 */
     middlewares?: AgentMiddleware[]
+    /** 清除 once 授权回调（Phase 4，由外界注入给 Session）。 */
+    clearApprovalsFn?: () => void
 }
 
 // ─── Session 类 ──────────────────────────────────────────────────────────────
@@ -77,6 +79,11 @@ export class Session {
     /** 轮次计数器。 */
     private turnIndex = 0
 
+    /** 获取当前轮次。 */
+    get currentTurn(): number {
+        return this.turnIndex
+    }
+
     /** LLM 调用函数。 */
     private readonly callLLM: CallLLM
 
@@ -95,6 +102,9 @@ export class Session {
     /** Hook 注册表。 */
     private readonly hookRunners: HookRunnerMap
 
+    /** 清除 once 授权回调。 */
+    private readonly clearApprovalsFn?: () => void
+
     constructor(options: SessionOptions) {
         this.id = options.sessionId ?? randomUUID()
         this.callLLM = options.callLLM
@@ -103,6 +113,7 @@ export class Session {
         this.contextWindow = options.contextWindow ?? 128_000
         this.compactThreshold = options.compactThreshold ?? 80
         this.hookRunners = buildHookRunners(options.hooks, options.middlewares)
+        this.clearApprovalsFn = options.clearApprovalsFn
 
         // 如果提供了系统提示词，作为历史的第一条消息
         if (options.systemPrompt) {
@@ -133,6 +144,7 @@ export class Session {
             hookRunners: this.hookRunners,
             sessionId: this.id,
             turnIndex: this.turnIndex,
+            clearApprovalsFn: this.clearApprovalsFn,
         })
 
         return result
@@ -271,5 +283,34 @@ export class Session {
                 errorMessage: (err as Error).message,
             }
         }
+    }
+
+    /**
+     * 为当前会话生成标题（Phase 7）。
+     */
+    async generateTitle(): Promise<string> {
+        // TODO: 实际调用 LLM 生成标题
+        const title = `Session ${this.id.split('-')[0]}`
+
+        // 发射 onTitleGenerated Hook
+        await runHook(this.hookRunners, 'onTitleGenerated', {
+            sessionId: this.id,
+            turn: this.turnIndex,
+            title,
+            originalPrompt: this.history[1]?.content || '',
+        })
+
+        return title
+    }
+
+    /**
+     * 允许外部（如 index.ts 的回调）触发内部 Hook。
+     * @internal
+     */
+    async _runHook<K extends keyof AgentHooks>(
+        event: K,
+        payload: Parameters<NonNullable<AgentHooks[K]>>[0],
+    ): Promise<void> {
+        await runHook(this.hookRunners, event, payload as any)
     }
 }

@@ -202,7 +202,7 @@ export class ToolOrchestrator {
             const result = await this.executeAction(action, hooks)
             results.push(result)
 
-            // 如果被拒绝，停止后续执行
+            // 如果被拒绝，停止后续执行   
             if (result.status === 'approval_denied') break
         }
 

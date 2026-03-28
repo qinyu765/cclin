@@ -58,8 +58,11 @@ const callLLM = createCallLLM({
 const approvalManager = new ApprovalManager({ policy: 'once' })
 const orchestrator = new ToolOrchestrator(registry, approvalManager)
 
-// Phase 5：动态加载系统提示词
-const systemPrompt = await loadSystemPrompt({ cwd: process.cwd() })
+// Phase 5：动态加载系统提示词（追加工具描述注入）
+const systemPrompt = await loadSystemPrompt({
+    cwd: process.cwd(),
+    toolsText: registry.toMarkdown(),
+})
 
 // Phase 6：创建 Token 计数器
 const tokenCounter = createTokenCounter()
@@ -101,6 +104,7 @@ const session = new Session({
     contextWindow: 128_000,
     compactThreshold: 80,
     middlewares: [loggerMiddleware],
+    clearApprovalsFn: () => orchestrator.clearOnceApprovals(),
 })
 
 // 初始化 readline 交互接口
@@ -113,19 +117,35 @@ const rl = readline.createInterface({
  * 创建基于 readline 的审批回调。
  *
  * 当 mutating 工具被调用时，向用户展示确认提示。
+ * Phase 7：触发 onApprovalRequest / onApprovalResponse
  */
 function createReadlineApproval() {
-    return (request: ApprovalRequest): Promise<ApprovalDecision> => {
+    return async (request: ApprovalRequest): Promise<ApprovalDecision> => {
+        // 触发 request hook
+        await session._runHook('onApprovalRequest', {
+            sessionId: session.id,
+            turn: session.currentTurn,
+            step: 0,
+            request,
+        })
+
         return new Promise((resolve) => {
             console.log(`\n  🔐 审批请求: ${request.toolName}`)
             console.log(`     ${request.reason}`)
-            rl.question('     允许执行? (y/n): ', (answer) => {
+            rl.question('     允许执行? (y/n): ', async (answer) => {
                 const approved = answer.trim().toLowerCase()
-                resolve(
-                    approved === 'y' || approved === 'yes'
-                        ? 'approve'
-                        : 'deny',
-                )
+                const decision = approved === 'y' || approved === 'yes' ? 'approve' : 'deny'
+                
+                // 触发 response hook
+                await session._runHook('onApprovalResponse', {
+                    sessionId: session.id,
+                    turn: session.currentTurn,
+                    step: 0,
+                    fingerprint: request.fingerprint,
+                    decision,
+                })
+                
+                resolve(decision)
             })
         })
     }
