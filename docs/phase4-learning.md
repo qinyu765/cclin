@@ -273,6 +273,26 @@ recordDecision(fingerprint: string, decision: ApprovalDecision): void {
 > 检查时 `isGranted()` 查两个 Set，只要任一包含就放行。
 > 这样 `session` 策略的授权在 `clearOnceApprovals()` 后仍有效。
 
+### 3.4 动态切换审批策略
+
+为了让用户能在会话中随时更改审批严格度，我们在 `ApprovalManager` 中暴露了 `getter/setter`，并在 CLI REPL（`index.ts`）中实现了 `/approve <mode>` 命令：
+
+```typescript
+// approval.ts
+set policy(newPolicy: ApprovalPolicy) {
+    this._policy = newPolicy
+    this.dispose() // ⚠️ 关键：切换策略时必须清空原有缓存，防止状态混乱
+}
+
+// index.ts
+if (trimmed.startsWith('/approve')) {
+    const mode = trimmed.split(' ')[1]
+    approvalManager.policy = mode as ApprovalPolicy
+}
+```
+
+这展示了审批系统的灵活性：核心规则（策略判断）与用户接口（斜杠命令）完全解耦。
+
 ---
 
 ## 第四部分：ToolOrchestrator — 执行的统一入口
