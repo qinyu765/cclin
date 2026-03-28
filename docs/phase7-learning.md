@@ -451,9 +451,14 @@ async runTurn(input: string): Promise<TurnResult> {
 }
 ```
 
-**为什么 Session 不自己发射 Hook？**
+**大部分 Hook 由谁发射？**
 
-大部分 Hook 在 ReAct 循环**内部**发射（onAction、onObservation 等）。Session 只负责把注册表"注入"进去。唯一的例外是 `onContextCompacted`——因为 `compactHistory()` 是 Session 的方法，压缩完成后由 Session 直接发射。
+大部分核心推理相关的 Hook 是在 ReAct 循环**内部**发射的（`onAction`、`onObservation`、`onTurnStart` 等）。对于这些 Hook，`Session` 只负责把注册表"注入"给循环引擎。
+
+但也有**例外情况**，这些是引擎外部的生命周期事件，通过 `Session` 的实例方法或外部（如 UI 层）来发射：
+1. `onContextCompacted`：压缩由 `Session` 发起，所以在 `compactHistory()` 内部发射。
+2. `onTitleGenerated`：标题生成独立于主循环流，在 `generateTitle()` 内部发射。
+3. `onApprovalRequest` / `onApprovalResponse`：审批行为发生在 UI 交互层，所以在 `index.ts` 闭包中，通过调用 `session._runHook()` 手动打入系统流。
 
 ### 5.2 loggerMiddleware — 把 console.log 变成中间件
 
