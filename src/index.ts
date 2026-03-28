@@ -1,11 +1,13 @@
 /**
- * @file 入口文件 — readline REPL，通过 Session 驱动 ReAct 循环。
+ * @file 入口文件 — Ink TUI，通过 Session 驱动 ReAct 循环。
  *
- * Phase 5：集成 Prompt 管理，系统提示词从模板动态组装。
- * 后续阶段将替换为正式的 TUI。
+ * Phase 8：从 readline REPL 升级为 Ink TUI。
+ * 核心改动：用 App 组件的 tuiMiddleware 替代 loggerMiddleware，
+ * 审批交互从 rl.question 改为 App 组件的审批 UI。
  */
 
-import * as readline from 'node:readline'
+import React from 'react'
+import { render } from 'ink'
 import dotenv from 'dotenv'
 import { createCallLLM } from './llm/client.js'
 import { Session } from './runtime/session.js'
@@ -19,7 +21,12 @@ import { writeFileTool } from './tools/write-file.js'
 import { editFileTool } from './tools/edit-file.js'
 import { bashTool } from './tools/bash.js'
 import { listDirectoryTool } from './tools/list-directory.js'
-import type { ApprovalRequest, ApprovalDecision, AgentMiddleware } from './types.js'
+import { App } from './tui/app.js'
+import type {
+    AgentMiddleware,
+    ApprovalRequest,
+    ApprovalDecision,
+} from './types.js'
 
 // 加载 .env 环境变量
 dotenv.config()
@@ -33,7 +40,7 @@ if (!apiKey) {
     process.exit(1)
 }
 
-// 使用 async IIFE 包裹启动逻辑（因为 loadSystemPrompt 是异步的）
+// 使用 async IIFE 包裹启动逻辑
 ;(async () => {
 
 // 创建工具注册表
@@ -46,7 +53,7 @@ registry.registerMany([
     listDirectoryTool,
 ])
 
-// 创建 LLM 调用函数（传入工具定义）
+// 创建 LLM 调用函数
 const callLLM = createCallLLM({
     apiKey,
     baseURL,
@@ -58,178 +65,87 @@ const callLLM = createCallLLM({
 const approvalManager = new ApprovalManager({ policy: 'once' })
 const orchestrator = new ToolOrchestrator(registry, approvalManager)
 
-// Phase 5：动态加载系统提示词（追加工具描述注入）
+// 动态加载系统提示词
 const systemPrompt = await loadSystemPrompt({
     cwd: process.cwd(),
     toolsText: registry.toMarkdown(),
 })
 
-// Phase 6：创建 Token 计数器
+// 创建 Token 计数器
 const tokenCounter = createTokenCounter()
 
-// Phase 7：创建日志中间件（替代之前硬编码的 console.log）
-const loggerMiddleware: AgentMiddleware = {
-    name: 'logger',
-    onTurnStart: ({ turn, input }) => {
-        console.log(`\n── Turn ${turn} ──`)
-        console.log(`  💬 Input: ${input.slice(0, 80)}${input.length > 80 ? '...' : ''}`)
-    },
-    onAction: ({ step, action }) => {
-        console.log(`  🔧 [step ${step}] calling tool: ${action.tool}`)
-    },
-    onObservation: ({ tool, observation }) => {
-        const preview = observation.slice(0, 120).replace(/\n/g, ' ')
-        console.log(`  📎 [${tool}] ${preview}${observation.length > 120 ? '...' : ''}`)
-    },
-    onContextUsage: ({ promptTokens, contextWindow, usagePercent, thresholdTokens }) => {
-        if (promptTokens >= thresholdTokens) {
-            console.log(`  ⚠️ Context: ${promptTokens}/${contextWindow} tokens (${usagePercent}%) — exceeds threshold`)
-        }
-    },
-    onContextCompacted: ({ status, beforeTokens, afterTokens, reductionPercent }) => {
-        if (status === 'success') {
-            console.log(`  📦 Compacted: ${beforeTokens} → ${afterTokens} tokens (-${reductionPercent}%)`)
-        }
-    },
-}
+// ─── TUI 桥接 ────────────────────────────────────────────────────────────
+// Session 需要 middleware，但 middleware 来自已渲染的 App 组件。
+// 解法：先渲染 App → App 回传 middleware → 再创建 Session。
+// Session 通过 ref 延迟绑定，onSubmit 闭包引用 ref。
 
-// 创建 Session（传入编排器的工具执行函数 + Token 计数器 + 中间件）
-const session = new Session({
-    callLLM,
-    systemPrompt,
-    executeTool: orchestrator.createExecuteTool({
-        requestApproval: createReadlineApproval(),
-    }),
-    tokenCounter,
-    contextWindow: 128_000,
-    compactThreshold: 80,
-    middlewares: [loggerMiddleware],
-    clearApprovalsFn: () => orchestrator.clearOnceApprovals(),
-})
+let session: Session | null = null
+let requestApprovalFn: ((req: ApprovalRequest) => Promise<ApprovalDecision>) | null = null
 
-// 初始化 readline 交互接口
-const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-})
+const handleSubmit = async (input: string) => {
+    if (!session) return
 
-/**
- * 创建基于 readline 的审批回调。
- *
- * 当 mutating 工具被调用时，向用户展示确认提示。
- * Phase 7：触发 onApprovalRequest / onApprovalResponse
- */
-function createReadlineApproval() {
-    return async (request: ApprovalRequest): Promise<ApprovalDecision> => {
-        // 触发 request hook
-        await session._runHook('onApprovalRequest', {
-            sessionId: session.id,
-            turn: session.currentTurn,
-            step: 0,
-            request,
-        })
-
-        return new Promise((resolve) => {
-            console.log(`\n  🔐 审批请求: ${request.toolName}`)
-            console.log(`     ${request.reason}`)
-            rl.question('     允许执行? (y/n): ', async (answer) => {
-                const approved = answer.trim().toLowerCase()
-                const decision = approved === 'y' || approved === 'yes' ? 'approve' : 'deny'
-                
-                // 触发 response hook
-                await session._runHook('onApprovalResponse', {
-                    sessionId: session.id,
-                    turn: session.currentTurn,
-                    step: 0,
-                    fingerprint: request.fingerprint,
-                    decision,
-                })
-                
-                resolve(decision)
-            })
-        })
+    // /compact 命令
+    if (input === '/compact') {
+        await session.compactHistory('manual')
+        return
     }
+
+    // /approve 命令
+    if (input.startsWith('/approve')) {
+        const mode = input.split(' ')[1]?.toLowerCase()
+        if (['always', 'once', 'session'].includes(mode ?? '')) {
+            approvalManager.policy = mode as 'always' | 'once' | 'session'
+        }
+        return
+    }
+
+    await session.runTurn(input)
 }
 
-console.log(`\n🤖 cclin Phase 7 — Hook / Middleware System`)
-console.log(`   Model: ${model}`)
-console.log(`   Base URL: ${baseURL}`)
-console.log(`   Tools: ${registry.size} registered`)
-console.log(`   Approval: ${approvalManager.policy} (可以通过 /approve 切换)`)
-console.log(`   Context: 128k window, 80% threshold`)
-console.log(`   Middlewares: ${1} registered (logger)`)
-console.log(`   Session: ${session.id}`)
-console.log(`   Type "exit" to quit, "/compact" to clear history, "/approve <mode>" to change policy.\n`)
+const handleExit = () => {
+    tokenCounter.dispose()
+}
 
-function prompt(): void {
-    rl.question('You: ', async (input) => {
-        const trimmed = input.trim()
-        if (!trimmed || trimmed.toLowerCase() === 'exit') {
-            console.log('Bye! 👋')
-            tokenCounter.dispose()
-            rl.close()
-            return
-        }
-
-        // Phase 6：/compact 命令
-        if (trimmed === '/compact') {
-            console.log('\n📦 正在压缩上下文...')
-            const result = await session.compactHistory('manual')
-            if (result.status === 'success') {
-                console.log(`   ✅ 压缩成功: ${result.beforeTokens} → ${result.afterTokens} tokens (减少 ${result.reductionPercent}%)`)
-            } else if (result.status === 'skipped') {
-                console.log(`   ⚠️ 跳过压缩: ${result.errorMessage ?? '无可压缩内容'}`)
-            } else {
-                console.log(`   ❌ 压缩失败: ${result.errorMessage}`)
-            }
-            console.log()
-            prompt()
-            return
-        }
-
-        // Phase 4 扩展：/approve 命令切换审批策略
-        if (trimmed.startsWith('/approve')) {
-            const args = trimmed.split(' ')
-            const mode = args[1]?.toLowerCase()
-            if (['always', 'once', 'session'].includes(mode)) {
-                approvalManager.policy = mode as 'always' | 'once' | 'session'
-                console.log(`\n🛡️ 审批策略已切换为: ${mode}\n`)
-            } else {
-                console.log(`\n⚠️ 未知策略。可用策略: always, once, session\n   当前策略: ${approvalManager.policy}\n`)
-            }
-            prompt()
-            return
-        }
-
-        try {
-            const result = await session.runTurn(trimmed)
-
-            // 显示最终回答
-            console.log(`\nAssistant: ${result.finalText}`)
-
-            // 显示 token 用量
-            if (result.tokenUsage) {
-                const u = result.tokenUsage
-                console.log(
-                    `  [tokens: prompt=${u.prompt ?? '?'}, completion=${u.completion ?? '?'}, total=${u.total ?? '?'}]`,
-                )
-            }
-
-            // 如果出错，显示错误信息
-            if (result.status !== 'ok' && result.errorMessage) {
-                console.log(`  ⚠️ Status: ${result.status}`)
-            }
-
-            console.log()
-        } catch (err) {
-            console.error(`\n❌ Error: ${(err as Error).message}\n`)
-        }
-
-        prompt()
+const handleMiddlewareReady = (mw: AgentMiddleware) => {
+    // Session 在中间件就绪后创建
+    session = new Session({
+        callLLM,
+        systemPrompt,
+        executeTool: orchestrator.createExecuteTool({
+            requestApproval: (req) => {
+                if (!requestApprovalFn) return Promise.resolve('deny' as const)
+                return requestApprovalFn(req)
+            },
+        }),
+        tokenCounter,
+        contextWindow: 128_000,
+        compactThreshold: 80,
+        middlewares: [mw],
+        clearApprovalsFn: () => orchestrator.clearOnceApprovals(),
     })
 }
 
-prompt()
+const handleApprovalReady = (fn: (req: ApprovalRequest) => Promise<ApprovalDecision>) => {
+    requestApprovalFn = fn
+}
+
+// 渲染 Ink TUI
+const app = render(
+    React.createElement(App, {
+        model,
+        baseURL,
+        toolCount: registry.size,
+        approvalPolicy: approvalManager.policy,
+        onSubmit: handleSubmit,
+        onExit: handleExit,
+        onMiddlewareReady: handleMiddlewareReady,
+        onApprovalReady: handleApprovalReady,
+    }),
+    { exitOnCtrlC: true },
+)
+
+await app.waitUntilExit()
 
 })().catch((err) => {
     console.error(`❌ Startup failed: ${(err as Error).message}`)

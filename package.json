@@ -10,10 +10,14 @@
   "dependencies": {
     "dotenv": "^16.4.7",
     "gpt-tokenizer": "^3.4.0",
-    "openai": "^4.78.1"
+    "ink": "^6.8.0",
+    "ink-text-input": "^6.0.0",
+    "openai": "^4.78.1",
+    "react": "^19.2.4"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
+    "@types/react": "^19.2.14",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   },

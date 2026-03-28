@@ -111,17 +111,17 @@
 
 ---
 
-### Phase 8: TUI（Ink）
+### Phase 8: TUI（Ink）✅
 **目标**：美观的终端界面。
 
-- 安装 Ink + ink-text-input 等
-- 主 App 组件（输入框 + 输出区）
-- 工具调用实时展示（spinner + 工具名 + 参数预览）
-- 审批交互 UI（y/n 确认）
-- 上下文使用量指示
-- Markdown 渲染（可选，ink-markdown）
+- [x] 安装 Ink + React + ink-text-input
+- [x] 主 App 组件（输入框 + 输出区 + 标题栏）
+- [x] 工具调用实时展示（状态图标 + 工具名 + 结果预览）
+- [x] 审批交互 UI（y/n 按键确认）
+- [x] 上下文使用量指示
+- [x] Hook 驱动 TUI 状态（tuiMiddleware 替代 loggerMiddleware）
 
-**产出**：从 readline 升级为美观的终端 UI。
+**产出**：从 readline 升级为基于 Ink 的终端 UI。
 
 ---
 
