@@ -22,6 +22,7 @@ import { writeFileTool } from './tools/write-file.js'
 import { editFileTool } from './tools/edit-file.js'
 import { bashTool } from './tools/bash.js'
 import { listDirectoryTool } from './tools/list-directory.js'
+import { updatePlanTool } from './tools/update-plan.js'
 import { App } from './tui/app.js'
 import type {
     AgentMiddleware,
@@ -52,6 +53,7 @@ router.registerNativeTools([
     editFileTool,
     bashTool,
     listDirectoryTool,
+    updatePlanTool,
 ])
 
 // 加载 MCP 配置并连接 MCP Server

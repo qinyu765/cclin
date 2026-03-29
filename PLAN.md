@@ -142,11 +142,12 @@
 ### Phase 10: 高级功能（长期）
 **目标**：对齐 memo-code 完整能力。
 
-- 多 Agent 协作（`spawn_agent` / `send_input` / `wait` / `close_agent`）
-- Skills 系统（技能发现 + prompt 注入）
-- `get_memory` / `update_plan` 工具
-- 会话持久化（JSONL 日志 / 历史回放）
-- Model Profile（不同模型的参数配置）
+- [ ] 多 Agent 协作（`spawn_agent` / `send_input` / `wait` / `close_agent`）
+- [ ] Skills 系统（技能发现 + prompt 注入）
+- [ ] `get_memory` 工具
+- [x] `update_plan` 工具
+- [ ] 会话持久化（JSONL 日志 / 历史回放）
+- [ ] Model Profile（不同模型的参数配置）
 
 ---
 
