@@ -471,3 +471,44 @@ export type ToolQueryable = {
     /** 根据工具名获取工具定义。 */
     get(name: string): ToolDefinition | undefined
 }
+
+// ─── Phase 10: 会话持久化类型 ──────────────────────────────────────────────────
+
+/** 历史事件类型标识。 */
+export type HistoryEventType =
+    | 'turn_start'
+    | 'action'
+    | 'observation'
+    | 'final'
+    | 'compact'
+    | 'error'
+
+/** 单条历史事件（写入 JSONL）。 */
+export type HistoryEvent = {
+    /** ISO 时间戳。 */
+    ts: string
+    /** 会话 ID。 */
+    sessionId: string
+    /** 事件类型。 */
+    type: HistoryEventType
+    /** 所属 turn 序号。 */
+    turn?: number
+    /** 所属 step 序号。 */
+    step?: number
+    /** 事件内容。 */
+    content?: string
+    /** 角色。 */
+    role?: Role
+    /** 扩展元数据。 */
+    meta?: Record<string, unknown>
+}
+
+/** 历史写入接口。 */
+export type HistorySink = {
+    /** 追加一条事件。 */
+    append(event: HistoryEvent): Promise<void>
+    /** 刷新缓冲区。 */
+    flush(): Promise<void>
+    /** 关闭并释放资源。 */
+    close(): Promise<void>
+}

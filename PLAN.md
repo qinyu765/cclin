@@ -144,10 +144,11 @@
 
 - [ ] 多 Agent 协作（`spawn_agent` / `send_input` / `wait` / `close_agent`）
 - [ ] Skills 系统（技能发现 + prompt 注入）
-- [ ] `get_memory` 工具
+- [x] `get_memory` 工具
+- [x] `search_files` 工具
 - [x] `update_plan` 工具
-- [ ] 会话持久化（JSONL 日志 / 历史回放）
-- [ ] Model Profile（不同模型的参数配置）
+- [x] 会话持久化（JSONL 日志 / 历史回放）
+- [x] Model Profile（不同模型的参数配置）
 
 ---
 

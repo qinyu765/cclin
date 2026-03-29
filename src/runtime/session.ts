@@ -29,7 +29,9 @@ import type {
     CompactResult,
     AgentHooks,
     AgentMiddleware,
+    HistorySink,
 } from '../types.js'
+import { createHistoryEvent } from './history.js'
 
 // ─── Session 配置 ──────────────────────────────────────────────────────────────
 
@@ -55,6 +57,8 @@ export type SessionOptions = {
     middlewares?: AgentMiddleware[]
     /** 清除 once 授权回调（Phase 4，由外界注入给 Session）。 */
     clearApprovalsFn?: () => void
+    /** 历史事件写入器（Phase 10，可选）。 */
+    historySink?: HistorySink
 }
 
 // ─── Session 类 ──────────────────────────────────────────────────────────────
@@ -105,6 +109,9 @@ export class Session {
     /** 清除 once 授权回调。 */
     private readonly clearApprovalsFn?: () => void
 
+    /** 历史事件写入器。 */
+    private readonly historySink?: HistorySink
+
     constructor(options: SessionOptions) {
         this.id = options.sessionId ?? randomUUID()
         this.callLLM = options.callLLM
@@ -114,6 +121,7 @@ export class Session {
         this.compactThreshold = options.compactThreshold ?? 80
         this.hookRunners = buildHookRunners(options.hooks, options.middlewares)
         this.clearApprovalsFn = options.clearApprovalsFn
+        this.historySink = options.historySink
 
         // 如果提供了系统提示词，作为历史的第一条消息
         if (options.systemPrompt) {
@@ -133,6 +141,17 @@ export class Session {
     async runTurn(input: string): Promise<TurnResult> {
         this.turnIndex += 1
 
+        // 写入 turn_start 事件
+        if (this.historySink) {
+            await this.historySink.append(createHistoryEvent({
+                sessionId: this.id,
+                type: 'turn_start',
+                turn: this.turnIndex,
+                content: input,
+                role: 'user',
+            }))
+        }
+
         const result = await runTurn(input, {
             history: this.history,
             callLLM: this.callLLM,
@@ -146,6 +165,22 @@ export class Session {
             turnIndex: this.turnIndex,
             clearApprovalsFn: this.clearApprovalsFn,
         })
+
+        // 写入 final 事件
+        if (this.historySink) {
+            await this.historySink.append(createHistoryEvent({
+                sessionId: this.id,
+                type: 'final',
+                turn: this.turnIndex,
+                content: result.finalText,
+                role: 'assistant',
+                meta: {
+                    status: result.status,
+                    steps: result.steps.length,
+                    tokenUsage: result.tokenUsage,
+                },
+            }))
+        }
 
         return result
     }

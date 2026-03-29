@@ -12,6 +12,10 @@ import type {
     ContentBlock,
     LLMResponse,
 } from '../types.js'
+import {
+    resolveModelProfile,
+    buildChatCompletionRequest,
+} from '../runtime/model-profile.js'
 
 // ─── 配置 ─────────────────────────────────────────────────────────────────────
 
@@ -110,13 +114,18 @@ export function createCallLLM(config: LLMClientConfig): CallLLM {
         // 1. 转换消息格式
         const openAIMessages = messages.map(toOpenAIMessage)
 
-        // 2. 调用 API
-        const data = await client.chat.completions.create({
+        // 2. 构建请求（使用 model profile）
+        const profile = resolveModelProfile(config.model)
+        const requestParams = buildChatCompletionRequest({
             model: config.model,
             messages: openAIMessages,
-            ...(config.tools && config.tools.length > 0
-                ? { tools: config.tools }
-                : {}),
+            tools: config.tools,
+            profile,
+        })
+
+        const data = await client.chat.completions.create({
+            ...requestParams,
+            stream: false,
         })
 
         // 3. 解析响应
