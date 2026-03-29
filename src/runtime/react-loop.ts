@@ -37,7 +37,7 @@ const MAX_STEPS = 25
  *   - textContent：所有 TextBlock 拼接的纯文本
  *   - toolUseBlocks：所有 ToolUseBlock 的结构化数据
  */
-function normalizeLLMResponse(response: LLMResponse): {
+export function normalizeLLMResponse(response: LLMResponse): {
     textContent: string
     toolUseBlocks: Array<{ id: string; name: string; input: unknown }>
     stopReason: string
@@ -77,7 +77,7 @@ function normalizeLLMResponse(response: LLMResponse): {
  *   2. 无工具调用但有文本 → final
  *   3. 两者皆无 → 空对象
  */
-function parseLLMResponse(
+export function parseLLMResponse(
     textContent: string,
     toolUseBlocks: Array<{ id: string; name: string; input: unknown }>,
 ): ParsedAssistant {

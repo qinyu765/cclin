@@ -25,7 +25,7 @@ const TEMPLATE_PATTERN = /\{\{\s*([\w.-]+)\s*\}\}/g
  * 设计决策：使用简单的正则替换而非完整模板引擎，
  * 因为我们只需要少量变量替换，不需要条件/循环等高级特性。
  */
-function renderTemplate(
+export function renderTemplate(
     template: string,
     vars: Record<string, string>,
 ): string {
