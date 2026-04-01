@@ -59,6 +59,8 @@ export type SessionOptions = {
     clearApprovalsFn?: () => void
     /** 历史事件写入器（Phase 10，可选）。 */
     historySink?: HistorySink
+    /** 流式 chunk 回调（TUI 实时渲染）。 */
+    onAssistantChunk?: (step: number, chunk: string) => void
 }
 
 // ─── Session 类 ──────────────────────────────────────────────────────────────
@@ -112,6 +114,9 @@ export class Session {
     /** 历史事件写入器。 */
     private readonly historySink?: HistorySink
 
+    /** 流式 chunk 回调。 */
+    private readonly onAssistantChunk?: (step: number, chunk: string) => void
+
     constructor(options: SessionOptions) {
         this.id = options.sessionId ?? randomUUID()
         this.callLLM = options.callLLM
@@ -122,6 +127,7 @@ export class Session {
         this.hookRunners = buildHookRunners(options.hooks, options.middlewares)
         this.clearApprovalsFn = options.clearApprovalsFn
         this.historySink = options.historySink
+        this.onAssistantChunk = options.onAssistantChunk
 
         // 如果提供了系统提示词，作为历史的第一条消息
         if (options.systemPrompt) {
@@ -164,6 +170,7 @@ export class Session {
             sessionId: this.id,
             turnIndex: this.turnIndex,
             clearApprovalsFn: this.clearApprovalsFn,
+            onAssistantChunk: this.onAssistantChunk,
         })
 
         // 写入 final 事件

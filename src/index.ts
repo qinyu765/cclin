@@ -94,6 +94,7 @@ const tokenCounter = createTokenCounter()
 
 let session: Session | null = null
 let requestApprovalFn: ((req: ApprovalRequest) => Promise<ApprovalDecision>) | null = null
+let onAssistantChunkFn: ((step: number, chunk: string) => void) | null = null
 
 const handleSubmit = async (input: string) => {
     if (!session) return
@@ -137,11 +138,18 @@ const handleMiddlewareReady = (mw: AgentMiddleware) => {
         compactThreshold: 80,
         middlewares: [mw],
         clearApprovalsFn: () => orchestrator.clearOnceApprovals(),
+        onAssistantChunk: (step, chunk) => {
+            if (onAssistantChunkFn) onAssistantChunkFn(step, chunk)
+        },
     })
 }
 
 const handleApprovalReady = (fn: (req: ApprovalRequest) => Promise<ApprovalDecision>) => {
     requestApprovalFn = fn
+}
+
+const handleAssistantChunkReady = (fn: (step: number, chunk: string) => void) => {
+    onAssistantChunkFn = fn
 }
 
 // 渲染 Ink TUI
@@ -151,10 +159,12 @@ const app = render(
         baseURL,
         toolCount: router.getToolCount().total,
         approvalPolicy: approvalManager.policy,
+        cwd: process.cwd(),
         onSubmit: handleSubmit,
         onExit: handleExit,
         onMiddlewareReady: handleMiddlewareReady,
         onApprovalReady: handleApprovalReady,
+        onAssistantChunkReady: handleAssistantChunkReady,
     }),
     { exitOnCtrlC: true },
 )

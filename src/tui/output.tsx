@@ -1,143 +1,218 @@
 /**
  * @file 输出区组件 — 渲染对话时间线。
  *
- * Phase 8：显示用户消息、助手回答、工具调用状态、系统通知。
+ * Phase 8 升级：TurnCell + StepCell + SystemCell 架构。
+ * 使用 Ink <Static> 渲染已完成内容，当前进行中的 Turn 动态渲染。
  */
 
-import React from 'react'
-import { Box, Text } from 'ink'
+import React, { memo, useMemo } from 'react'
+import { Box, Static, Text } from 'ink'
+import { MarkdownRenderer } from './chatwidget/markdown_renderer.js'
+import { TOOL_STATUS } from './types.js'
+import type {
+    SystemMessage,
+    StepView,
+    ToolStatus,
+    TurnView,
+} from './types.js'
 
-// ─── 时间线条目类型 ─────────────────────────────────────────────────────────
+// ─── 工具函数 ─────────────────────────────────────────────────────────────
 
-/** 用户消息。 */
-export type UserEntry = {
-    type: 'user'
-    text: string
+function statusColor(status?: ToolStatus): string {
+    if (status === TOOL_STATUS.ERROR) return 'red'
+    if (status === TOOL_STATUS.EXECUTING) return 'yellow'
+    return 'green'
 }
 
-/** 助手消息。 */
-export type AssistantEntry = {
-    type: 'assistant'
-    text: string
+function truncate(str: string, max: number): string {
+    if (str.length <= max) return str
+    return `${str.slice(0, max)}...`
 }
 
-/** 工具调用记录。 */
-export type ToolEntry = {
-    type: 'tool'
-    name: string
-    status: 'running' | 'done' | 'error'
-    observation?: string
+/** 提取工具调用的主参数用于显示。 */
+function mainParam(input: unknown): string | null {
+    if (input === undefined || input === null) return null
+    if (typeof input === 'string') return truncate(input, 70)
+    if (typeof input !== 'object' || Array.isArray(input)) {
+        return truncate(String(input), 70)
+    }
+    const record = input as Record<string, unknown>
+    const keys = ['cmd', 'path', 'file_path', 'query', 'content']
+    for (const key of keys) {
+        const raw = record[key]
+        if (raw === undefined || raw === null || raw === '') continue
+        return truncate(String(raw), 70)
+    }
+    return null
 }
+
+// ─── 子组件 ──────────────────────────────────────────────────────────────
 
 /** 系统通知。 */
-export type SystemEntry = {
-    type: 'system'
-    text: string
-    tone: 'info' | 'warning' | 'error'
-}
-
-/** 时间线条目联合类型。 */
-export type TimelineEntry =
-    | UserEntry
-    | AssistantEntry
-    | ToolEntry
-    | SystemEntry
-
-// ─── 子组件 ──────────────────────────────────────────────────────────────────
-
-/** 用户消息显示。 */
-function UserMessage({ text }: { text: string }) {
+const SystemCell = memo(function SystemCell({ message }: { message: SystemMessage }) {
+    const color = message.tone === 'error' ? 'red'
+        : message.tone === 'warning' ? 'yellow' : 'cyan'
     return (
-        <Box marginBottom={0}>
-            <Text color="green" bold>{'You: '}</Text>
-            <Text>{text}</Text>
+        <Box flexDirection="column">
+            <Text color={color}>● {message.title}</Text>
+            <Text color="gray">{message.content}</Text>
         </Box>
     )
-}
+})
 
-/** 助手消息显示。 */
-function AssistantMessage({ text }: { text: string }) {
+/** 单步：思考 + 工具调用。 */
+const StepCell = memo(function StepCell({
+    step,
+    isCompleted,
+}: {
+    step: StepView
+    isCompleted?: boolean
+}) {
+    const param = step.action ? mainParam(step.action.input) : null
     return (
-        <Box marginBottom={0}>
-            <Text color="cyan" bold>{'Assistant: '}</Text>
-            <Text>{text}</Text>
-        </Box>
-    )
-}
-
-/** 工具调用状态显示。 */
-function ToolStatus({ name, status, observation }: ToolEntry) {
-    const icon = status === 'running' ? '⏳' :
-                 status === 'done' ? '✅' : '❌'
-    const color = status === 'running' ? 'yellow' :
-                  status === 'done' ? 'green' : 'red'
-    return (
-        <Box flexDirection="column" marginLeft={2}>
-            <Text color={color}>{`  ${icon} ${name}`}</Text>
-            {observation && status !== 'running' && (
-                <Box marginLeft={4}>
-                    <Text dimColor>
-                        {'    📎 '}{observation.slice(0, 120)}
-                        {observation.length > 120 ? '...' : ''}
-                    </Text>
+        <Box flexDirection="column">
+            {step.thinking ? (
+                <Box>
+                    <Text color="gray">● </Text>
+                    <Text color="gray">{truncate(step.thinking, 120)}</Text>
                 </Box>
-            )}
+            ) : null}
+            {step.action ? (
+                <Box>
+                    <Text color={statusColor(step.toolStatus)}>● </Text>
+                    <Text color="gray">Used </Text>
+                    <Text color="cyan">{step.action.tool}</Text>
+                    {param ? <Text color="gray"> ({param})</Text> : null}
+                </Box>
+            ) : null}
+            {/* Show streaming assistant text (before turn_final) */}
+            {!isCompleted && !step.action && step.assistantText ? (
+                <Box>
+                    <Text color="red">{'>> '}</Text>
+                    <Text>{step.assistantText}</Text>
+                </Box>
+            ) : null}
         </Box>
     )
-}
+})
 
-/** 系统通知显示。 */
-function SystemMessage({ text, tone }: { text: string; tone: string }) {
-    const color = tone === 'error' ? 'red' :
-                  tone === 'warning' ? 'yellow' : 'blue'
+/** 单轮对话。 */
+const TurnCell = memo(function TurnCell({ turn }: { turn: TurnView }) {
+    const isCompleted = turn.status !== 'running'
     return (
-        <Box marginBottom={0}>
-            <Text color={color}>{'ℹ️  '}{text}</Text>
+        <Box flexDirection="column" marginBottom={1}>
+            <Box marginY={0}>
+                <Text bold color="blue">{`>> `}</Text>
+                <Text bold>{turn.userInput}</Text>
+            </Box>
+            {turn.steps.map((step) => (
+                <StepCell
+                    key={`${turn.index}-${step.index}`}
+                    step={step}
+                    isCompleted={isCompleted}
+                />
+            ))}
+            {turn.finalText ? (
+                <Box marginTop={0}>
+                    <Text color="red">{'>> '}</Text>
+                    <MarkdownRenderer content={turn.finalText} />
+                </Box>
+            ) : null}
+            {turn.status && turn.status !== 'ok' && turn.status !== 'running' ? (
+                <Text color="red">Status: {turn.status}</Text>
+            ) : null}
+            {turn.errorMessage ? <Text color="red">{turn.errorMessage}</Text> : null}
         </Box>
     )
-}
+})
 
-// ─── 主组件 ──────────────────────────────────────────────────────────────────
+// ─── 静态渲染项 ──────────────────────────────────────────────────────────────
 
-/** OutputArea Props。 */
+
 export type OutputAreaProps = {
-    /** 时间线条目列表。 */
-    timeline: TimelineEntry[]
-    /** 上下文使用百分比（0-100）。 */
-    contextPercent?: number
+    turns: TurnView[]
+    systemMessages: SystemMessage[]
+    cwd?: string
+    modelName: string
+    toolCount: number
+    approvalPolicy: string
 }
 
-/**
- * 输出区组件。
- *
- * 渲染对话时间线和上下文使用量指示。
- */
-export function OutputArea({ timeline, contextPercent }: OutputAreaProps) {
-    return (
-        <Box flexDirection="column" flexGrow={1}>
-            {/* 上下文使用量指示 */}
-            {contextPercent !== undefined && contextPercent > 0 && (
-                <Box marginBottom={0}>
-                    <Text dimColor>
-                        {'📊 Context: '}{contextPercent}{'%'}
-                        {contextPercent >= 80 ? ' ⚠️' : ''}
-                    </Text>
-                </Box>
-            )}
+type HeaderStaticItem = { type: 'header'; data: { modelName: string; toolCount: number; approvalPolicy: string; cwd?: string } }
+type HistoryStaticItem = SystemMessage | TurnView
+type StaticItem = HeaderStaticItem | HistoryStaticItem
 
-            {/* 时间线渲染 */}
-            {timeline.map((entry, i) => {
-                switch (entry.type) {
-                    case 'user':
-                        return <UserMessage key={i} text={entry.text} />
-                    case 'assistant':
-                        return <AssistantMessage key={i} text={entry.text} />
-                    case 'tool':
-                        return <ToolStatus key={i} {...entry} />
-                    case 'system':
-                        return <SystemMessage key={i} text={entry.text} tone={entry.tone} />
-                }
-            })}
+function isHeaderItem(item: StaticItem): item is HeaderStaticItem {
+    return (item as HeaderStaticItem).type === 'header'
+}
+
+function isSystemItem(item: HistoryStaticItem): item is SystemMessage {
+    return (item as SystemMessage).id !== undefined
+}
+
+export function OutputArea({
+    turns,
+    systemMessages,
+    cwd,
+    modelName,
+    toolCount,
+    approvalPolicy,
+}: OutputAreaProps) {
+    const { staticItems, activeTurn } = useMemo(() => {
+        const completedTurns = turns.filter((t) => t.status !== 'running')
+        const inProgress = turns.find((t) => t.status === 'running')
+
+        const headerItem: HeaderStaticItem = {
+            type: 'header',
+            data: { modelName, toolCount, approvalPolicy, cwd },
+        }
+
+        const historyItems: HistoryStaticItem[] = [...systemMessages, ...completedTurns]
+        // Sort history by sequence to ensure correct rendering order
+        historyItems.sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))
+
+        const items: StaticItem[] = [headerItem, ...historyItems]
+
+        return { staticItems: items, activeTurn: inProgress }
+    }, [turns, systemMessages, modelName, toolCount, approvalPolicy, cwd])
+
+    return (
+        <Box flexDirection="column">
+            {/* 静态区：Header、系统消息、已完成的历史对话 */}
+            <Static items={staticItems}>
+                {(item) => {
+                    if (isHeaderItem(item)) {
+                        return (
+                            <Box
+                                key="app-header"
+                                borderStyle="round"
+                                borderColor="blue"
+                                paddingX={1}
+                                flexDirection="column"
+                                marginBottom={1}
+                            >
+                                <Text bold>cclin</Text>
+                                <Text color="gray">
+                                    {item.data.modelName} • Tools: {item.data.toolCount} •{' '}
+                                    {item.data.approvalPolicy}
+                                </Text>
+                                {item.data.cwd && <Text color="gray">cwd: {item.data.cwd}</Text>}
+                            </Box>
+                        )
+                    }
+
+                    if (isSystemItem(item)) {
+                        return <SystemCell key={`system-${item.id}`} message={item} />
+                    }
+
+                    return <TurnCell key={`turn-${item.index}`} turn={item} />
+                }}
+            </Static>
+
+            {/* 当前正在进行的 Turn */}
+            {activeTurn ? (
+                <TurnCell key={`active-${activeTurn.index}`} turn={activeTurn} />
+            ) : null}
         </Box>
     )
 }

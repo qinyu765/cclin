@@ -148,6 +148,8 @@ export type RunTurnDeps = {
     turnIndex?: number
     /** 清理本轮一次性授权（Turn 结束时调用）。 */
     clearApprovalsFn?: () => void
+    /** 流式文本 chunk 回调（TUI 实时显示）。 */
+    onAssistantChunk?: (step: number, chunk: string) => void
 }
 
 /** 默认的 mock 工具执行函数。 */
@@ -232,7 +234,12 @@ export async function runTurn(
         // 调用 LLM
         let normalized: ReturnType<typeof normalizeLLMResponse>
         try {
-            const llmResult = await callLLM(history)
+            const llmResult = await callLLM(
+                history,
+                deps.onAssistantChunk
+                    ? (chunk) => deps.onAssistantChunk!(step, chunk)
+                    : undefined,
+            )
             normalized = normalizeLLMResponse(llmResult)
         } catch (err) {
             const msg = `LLM call failed: ${(err as Error).message}`

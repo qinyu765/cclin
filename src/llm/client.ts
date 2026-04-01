@@ -108,9 +108,11 @@ export function createCallLLM(config: LLMClientConfig): CallLLM {
     const client = new OpenAI({
         apiKey: config.apiKey,
         baseURL: config.baseURL,
+        timeout: 60000, // 60s timeout to prevent infinite API hangs
+        maxRetries: 1,  // fail fast
     })
 
-    return async (messages, _onChunk?) => {
+    return async (messages, onChunk?) => {
         // 1. 转换消息格式
         const openAIMessages = messages.map(toOpenAIMessage)
 
@@ -123,12 +125,126 @@ export function createCallLLM(config: LLMClientConfig): CallLLM {
             profile,
         })
 
+        // ─── 流式模式 ─────────────────────────────────────────────
+        if (onChunk) {
+            const controller = new AbortController()
+            let timeoutId = setTimeout(() => controller.abort(new Error('LLM Stream idle timeout (>60s)')), 60000)
+            const resetTimeout = () => {
+                clearTimeout(timeoutId)
+                timeoutId = setTimeout(() => controller.abort(new Error('LLM Stream idle timeout (>60s)')), 60000)
+            }
+
+            let stream
+            try {
+                stream = await client.chat.completions.create({
+                    ...requestParams,
+                    stream: true,
+                }, { signal: controller.signal })
+            } catch (err) {
+                clearTimeout(timeoutId)
+                throw err
+            }
+
+            let textContent = ''
+            let reasoningContent = ''
+            const toolCallDeltas: Map<number, {
+                id: string; name: string; args: string
+            }> = new Map()
+            let promptTokens = 0
+            let completionTokens = 0
+            let totalTokens = 0
+
+            try {
+                for await (const chunk of stream) {
+                    resetTimeout()
+                    const delta = chunk.choices?.[0]?.delta
+
+                // 文本 delta
+                if (delta?.content) {
+                    textContent += delta.content
+                    onChunk(delta.content)
+                }
+
+                // Reasoning delta (DeepSeek / proxy extensions)
+                const rd = (delta as { reasoning_content?: string })
+                    ?.reasoning_content
+                if (rd) {
+                    reasoningContent += rd
+                    if (onChunk) onChunk(rd)
+                }
+
+                // Tool call deltas（增量拼接）
+                if (delta?.tool_calls) {
+                    for (const tc of delta.tool_calls) {
+                        const existing = toolCallDeltas.get(tc.index)
+                        if (existing) {
+                            existing.args += tc.function?.arguments ?? ''
+                        } else {
+                            toolCallDeltas.set(tc.index, {
+                                id: tc.id ?? '',
+                                name: tc.function?.name ?? '',
+                                args: tc.function?.arguments ?? '',
+                            })
+                        }
+                    }
+                }
+
+                // Usage（最后一个 chunk 包含）
+                if (chunk.usage) {
+                    promptTokens = chunk.usage.prompt_tokens ?? 0
+                    completionTokens = chunk.usage.completion_tokens ?? 0
+                    totalTokens = chunk.usage.total_tokens ?? 0
+                }
+            }
+
+            // 组装最终响应
+            const content: ContentBlock[] = []
+            const toolBlocks = Array.from(toolCallDeltas.values())
+
+            if (toolBlocks.length > 0) {
+                if (textContent) content.push({ type: 'text', text: textContent })
+                for (const tb of toolBlocks) {
+                    const parsed = parseToolArguments(tb.args)
+                    if (parsed.ok) {
+                        content.push({
+                            type: 'tool_use',
+                            id: tb.id,
+                            name: tb.name,
+                            input: parsed.data,
+                        })
+                    } else {
+                        content.push({
+                            type: 'text',
+                            text: `[tool parse error] ${parsed.error}`,
+                        })
+                    }
+                }
+            } else {
+                content.push({ type: 'text', text: textContent })
+            }
+
+            const hasToolUse = content.some(c => c.type === 'tool_use')
+            return {
+                content,
+                reasoning_content: reasoningContent.trim() || undefined,
+                stop_reason: hasToolUse ? 'tool_use' : 'end_turn',
+                usage: {
+                   prompt: promptTokens,
+                   completion: completionTokens,
+                   total: totalTokens,
+               },
+            }
+            } finally {
+                clearTimeout(timeoutId)
+            }
+        }
+
+        // ─── 非流式模式（向后兼容） ────────────────────────────────
         const data = await client.chat.completions.create({
             ...requestParams,
             stream: false,
         })
 
-        // 3. 解析响应
         const choice = data.choices?.[0]
         const message = choice?.message
         const reasoningContent = extractReasoningContent(message)
@@ -139,11 +255,9 @@ export function createCallLLM(config: LLMClientConfig): CallLLM {
             total: data.usage?.total_tokens,
         }
 
-        // 4. 构建内容块
         const content: ContentBlock[] = []
 
         if (message?.tool_calls && message.tool_calls.length > 0) {
-            // 包含工具调用
             if (message.content) {
                 content.push({ type: 'text', text: message.content })
             }
@@ -166,7 +280,6 @@ export function createCallLLM(config: LLMClientConfig): CallLLM {
                 }
             }
         } else {
-            // 纯文本响应
             const text = message?.content ?? ''
             content.push({ type: 'text', text })
         }

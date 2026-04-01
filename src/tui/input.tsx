@@ -1,93 +1,270 @@
 /**
- * @file 输入区组件 — 文本输入 + 审批交互。
+ * @file 输入区组件 — 自定义编辑器 + 审批交互 + 底部状态栏。
  *
- * Phase 8：提供用户输入框，支持 busy 状态禁用和审批确认。
+ * Phase 8 升级：
+ *   - 用 useInput + useState 替代 ink-text-input
+ *   - 输入提示符 ❯（蓝紫色）
+ *   - 底部 Footer 显示 context%
+ *   - 审批 overlay 独立渲染
  */
 
-import React from 'react'
-import { Box, Text, useInput } from 'ink'
-import TextInput from 'ink-text-input'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Box, Text, useInput, useStdout } from 'ink'
+import {
+    getWrappedCursorLayout,
+    insertAtCursor,
+    moveCursorLeft,
+    moveCursorRight,
+    backspaceAtCursor,
+} from './composer_input.js'
 
-// ─── Props ───────────────────────────────────────────────────────────────────
+// ─── Slash Commands ──────────────────────────────────────────────────────
+
+const SLASH_COMMANDS = [
+    { name: '/compact', desc: 'Compact context history' },
+    { name: '/model', desc: 'Show current model info' },
+    { name: '/approve', desc: 'Change approval policy' },
+    { name: '/clear', desc: 'Clear conversation' },
+    { name: '/exit', desc: 'Exit cclin' },
+] as const
+
+// ─── Props ───────────────────────────────────────────────────────────────
 
 export type InputAreaProps = {
-    /** 当前是否正在处理（禁用输入）。 */
     busy: boolean
-    /** 提交回调。 */
     onSubmit: (value: string) => void
-    /** 是否处于审批模式。 */
     approvalPending?: boolean
-    /** 审批信息描述。 */
     approvalText?: string
-    /** 审批回调。 */
     onApproval?: (approved: boolean) => void
+    contextPercent?: number
 }
 
-// ─── 组件 ─────────────────────────────────────────────────────────────────────
+// ─── 组件 ─────────────────────────────────────────────────────────────────
 
-/**
- * 输入区组件。
- *
- * 两种模式：
- *   1. 普通模式：文本输入框，回车提交
- *   2. 审批模式：显示审批信息，y/n 按键确认
- */
 export function InputArea({
     busy,
     onSubmit,
     approvalPending,
     approvalText,
     onApproval,
+    contextPercent = 0,
 }: InputAreaProps) {
-    const [value, setValue] = React.useState('')
+    const [editor, setEditor] = useState({ value: '', cursor: 0 })
+    const editorRef = useRef(editor)
+    const [slashIdx, setSlashIdx] = useState(0)
 
-    // 审批模式键盘监听
-    useInput((input, _key) => {
-        if (!approvalPending || !onApproval) return
-        if (input === 'y' || input === 'Y') {
-            onApproval(true)
-        } else if (input === 'n' || input === 'N') {
-            onApproval(false)
+    const commitEditor = useCallback((next: { value: string; cursor: number }) => {
+        editorRef.current = next
+        setEditor(next)
+    }, [])
+
+    // Compute matching slash command suggestions
+    const slashSuggestions = useMemo(() => {
+        if (!editor.value.startsWith('/') || editor.value.includes(' ')) return []
+        return SLASH_COMMANDS.filter(c => c.name.startsWith(editor.value))
+    }, [editor.value])
+
+    const { stdout } = useStdout()
+
+    // 键盘输入处理
+    useInput((input, key) => {
+        // 审批模式
+        if (approvalPending && onApproval) {
+            if (input === 'y' || input === 'Y') onApproval(true)
+            if (input === 'n' || input === 'N') onApproval(false)
+            return
         }
-    }, { isActive: !!approvalPending })
 
-    // 提交处理
-    const handleSubmit = (text: string) => {
-        const trimmed = text.trim()
-        if (!trimmed) return
-        setValue('')
-        onSubmit(trimmed)
-    }
+        if (busy) return
+
+        // Tab: accept slash suggestion
+        if (key.tab && slashSuggestions.length > 0) {
+            const selected = slashSuggestions[slashIdx]
+            if (selected) {
+                commitEditor({ value: selected.name, cursor: selected.name.length })
+                setSlashIdx(0)
+            }
+            return
+        }
+
+        // Arrow up/down in slash suggestion mode
+        if (slashSuggestions.length > 0) {
+            if (key.upArrow) {
+                setSlashIdx(i => Math.max(0, i - 1))
+                return
+            }
+            if (key.downArrow) {
+                setSlashIdx(i => Math.min(slashSuggestions.length - 1, i + 1))
+                return
+            }
+        }
+
+        // Enter 提交
+        if (key.return) {
+            const trimmed = editorRef.current.value.trim()
+            if (!trimmed) return
+            commitEditor({ value: '', cursor: 0 })
+            onSubmit(trimmed)
+            return
+        }
+
+        // Backspace
+        if (key.backspace || key.delete) {
+            const current = editorRef.current
+            if (current.cursor > 0) {
+                commitEditor(backspaceAtCursor(current.value, current.cursor))
+            }
+            return
+        }
+
+        // 左右方向键
+        if (key.leftArrow) {
+            const current = editorRef.current
+            commitEditor({ value: current.value, cursor: moveCursorLeft(current.value, current.cursor) })
+            return
+        }
+        if (key.rightArrow) {
+            const current = editorRef.current
+            commitEditor({ value: current.value, cursor: moveCursorRight(current.value, current.cursor) })
+            return
+        }
+
+        // Ctrl+A 行首
+        if (key.ctrl && input === 'a') {
+            commitEditor({ value: editorRef.current.value, cursor: 0 })
+            return
+        }
+        // Ctrl+E 行尾
+        if (key.ctrl && input === 'e') {
+            const current = editorRef.current
+            commitEditor({ value: current.value, cursor: current.value.length })
+            return
+        }
+        // Ctrl+U 删除到行首
+        if (key.ctrl && input === 'u') {
+            const current = editorRef.current
+            commitEditor({ value: current.value.slice(current.cursor), cursor: 0 })
+            return
+        }
+
+        // 普通字符输入
+        if (input && !key.ctrl && !key.meta) {
+            const current = editorRef.current
+            commitEditor(insertAtCursor(current.value, current.cursor, input))
+        }
+    })
 
     // 审批模式
     if (approvalPending && approvalText) {
         return (
             <Box flexDirection="column">
-                <Text color="yellow">{'🔐 '}{approvalText}</Text>
-                <Text dimColor>{'   按 y 允许, n 拒绝'}</Text>
+                <Box
+                    borderStyle="single"
+                    borderColor="yellow"
+                    paddingX={1}
+                    flexDirection="column"
+                >
+                    <Text bold color="yellow">Tool Approval Required</Text>
+                    <Text>{approvalText}</Text>
+                    <Box marginTop={1}>
+                        <Text color="gray">Press </Text>
+                        <Text color="green" bold>y</Text>
+                        <Text color="gray"> allow, </Text>
+                        <Text color="red" bold>n</Text>
+                        <Text color="gray"> deny</Text>
+                    </Box>
+                </Box>
+                <Footer busy={false} contextPercent={contextPercent} approvalPending />
             </Box>
         )
     }
 
-    // busy 模式
+    // Busy 模式
     if (busy) {
         return (
-            <Box>
-                <Text color="yellow">{'⏳ 思考中...'}</Text>
+            <Box flexDirection="column">
+                <Box>
+                    <Text color="gray">❯ </Text>
+                    <Text color="gray">{editor.value}</Text>
+                </Box>
+                <Footer busy contextPercent={contextPercent} />
             </Box>
         )
     }
 
-    // 普通输入模式
+    // 普通输入 — 使用 getWrappedCursorLayout 做终端宽度感知的逐行渲染
+    const termWidth = stdout?.columns ?? process.stdout?.columns ?? 80
+    // Reserve prompt prefix (2 chars "❯ ") and 1 cell for cursor block
+    const contentWidth = Math.max(1, termWidth - 3)
+    const wrappedLayout = getWrappedCursorLayout(editor.value, editor.cursor, contentWidth)
+
     return (
-        <Box>
-            <Text color="green" bold>{'You: '}</Text>
-            <TextInput
-                value={value}
-                onChange={setValue}
-                onSubmit={handleSubmit}
-                placeholder="输入消息，或 exit 退出..."
-            />
+        <Box flexDirection="column">
+            {wrappedLayout.lines.map((line, idx) => {
+                const isCursorRow = idx === wrappedLayout.row
+                const beforeText = isCursorRow
+                    ? line.text.slice(0, wrappedLayout.cursorInRow)
+                    : line.text
+                const afterText = isCursorRow
+                    ? line.text.slice(wrappedLayout.cursorInRow)
+                    : ''
+
+                return (
+                    <Box key={`line-${idx}`}>
+                        <Text color="#7C3AED" bold>{idx === 0 ? '❯ ' : '  '}</Text>
+                        <Text>{beforeText}</Text>
+                        {isCursorRow ? <Text color="cyan">▊</Text> : null}
+                        {isCursorRow ? <Text>{afterText}</Text> : null}
+                    </Box>
+                )
+            })}
+            {slashSuggestions.length > 0 ? (
+                <Box flexDirection="column" marginLeft={2}>
+                    {slashSuggestions.map((cmd, i) => (
+                        <Box key={cmd.name}>
+                            <Text
+                                color={i === slashIdx ? 'cyan' : 'gray'}
+                                bold={i === slashIdx}
+                            >
+                                {i === slashIdx ? '▸ ' : '  '}
+                                {cmd.name}
+                            </Text>
+                            <Text color="gray"> — {cmd.desc}</Text>
+                        </Box>
+                    ))}
+                    <Text color="gray" italic>Tab to complete • ↑↓ to select</Text>
+                </Box>
+            ) : null}
+            <Footer busy={false} contextPercent={contextPercent} />
+        </Box>
+    )
+}
+
+// ─── Footer 子组件 ────────────────────────────────────────────────────────
+
+function Footer({
+    busy,
+    contextPercent,
+    approvalPending = false,
+}: {
+    busy: boolean
+    contextPercent: number
+    approvalPending?: boolean
+}) {
+    const helpText = approvalPending
+        ? 'y allow • n deny'
+        : 'Enter send • /compact • exit'
+
+    return (
+        <Box justifyContent="space-between" marginTop={0}>
+            <Box>
+                {busy ? (
+                    <Text color="yellow">Working...</Text>
+                ) : (
+                    <Text color="gray">{helpText}</Text>
+                )}
+            </Box>
+            <Text color="gray">context: {contextPercent.toFixed(1)}%</Text>
         </Box>
     )
 }
