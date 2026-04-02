@@ -157,21 +157,26 @@ export function InputArea({
     // 审批模式
     if (approvalPending && approvalText) {
         return (
-            <Box flexDirection="column">
+            <Box flexDirection="column" marginTop={1}>
                 <Box
-                    borderStyle="single"
+                    borderStyle="round"
                     borderColor="yellow"
                     paddingX={1}
                     flexDirection="column"
                 >
-                    <Text bold color="yellow">Tool Approval Required</Text>
-                    <Text>{approvalText}</Text>
-                    <Box marginTop={1}>
-                        <Text color="gray">Press </Text>
-                        <Text color="green" bold>y</Text>
-                        <Text color="gray"> allow, </Text>
+                    <Text bold color="yellow">⚠️ Action Approval Required</Text>
+                    <Box marginY={1} marginLeft={1}>
+                        <Text color="white">{approvalText}</Text>
+                    </Box>
+                    <Box>
+                        <Text color="cyan">❯ </Text>
+                        <Text>Allow this action? </Text>
+                        <Text color="gray">[</Text>
+                        <Text color="green" bold>Y</Text>
+                        <Text color="gray">/</Text>
                         <Text color="red" bold>n</Text>
-                        <Text color="gray"> deny</Text>
+                        <Text color="gray">] </Text>
+                        <Text color="cyan">▊</Text>
                     </Box>
                 </Box>
                 <Footer busy={false} contextPercent={contextPercent} approvalPending />

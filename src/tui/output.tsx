@@ -72,24 +72,28 @@ const StepCell = memo(function StepCell({
     return (
         <Box flexDirection="column">
             {step.thinking ? (
-                <Box>
-                    <Text color="gray">● </Text>
-                    <Text color="gray">{truncate(step.thinking, 120)}</Text>
+                <Box flexDirection="row">
+                    <Box width={2}><Text color="gray">● </Text></Box>
+                    <Box flexGrow={1}><Text color="gray">{truncate(step.thinking, 120)}</Text></Box>
                 </Box>
             ) : null}
             {step.action ? (
-                <Box>
-                    <Text color={statusColor(step.toolStatus)}>● </Text>
-                    <Text color="gray">Used </Text>
-                    <Text color="cyan">{step.action.tool}</Text>
-                    {param ? <Text color="gray"> ({param})</Text> : null}
+                <Box flexDirection="row">
+                    <Box width={2}><Text color={statusColor(step.toolStatus)}>● </Text></Box>
+                    <Box flexGrow={1}>
+                        <Text>
+                            <Text color="gray">Used </Text>
+                            <Text color="cyan">{step.action.tool}</Text>
+                            {param ? <Text color="gray"> ({param})</Text> : null}
+                        </Text>
+                    </Box>
                 </Box>
             ) : null}
             {/* Show streaming assistant text (before turn_final) */}
             {!isCompleted && !step.action && step.assistantText ? (
-                <Box>
-                    <Text color="red">{'>> '}</Text>
-                    <Text>{step.assistantText}</Text>
+                <Box flexDirection="row">
+                    <Box width={3}><Text color="red">{'>> '}</Text></Box>
+                    <Box flexGrow={1}><Text>{step.assistantText}</Text></Box>
                 </Box>
             ) : null}
         </Box>
@@ -101,9 +105,9 @@ const TurnCell = memo(function TurnCell({ turn }: { turn: TurnView }) {
     const isCompleted = turn.status !== 'running'
     return (
         <Box flexDirection="column" marginBottom={1}>
-            <Box marginY={0}>
-                <Text bold color="blue">{`>> `}</Text>
-                <Text bold>{turn.userInput}</Text>
+            <Box marginY={0} flexDirection="row">
+                <Box width={3}><Text bold color="blue">{`>> `}</Text></Box>
+                <Box flexGrow={1}><Text bold>{turn.userInput}</Text></Box>
             </Box>
             {turn.steps.map((step) => (
                 <StepCell
@@ -113,9 +117,9 @@ const TurnCell = memo(function TurnCell({ turn }: { turn: TurnView }) {
                 />
             ))}
             {turn.finalText ? (
-                <Box marginTop={0}>
-                    <Text color="red">{'>> '}</Text>
-                    <MarkdownRenderer content={turn.finalText} />
+                <Box marginTop={0} flexDirection="row">
+                    <Box width={3}><Text color="red">{'>> '}</Text></Box>
+                    <Box flexGrow={1}><MarkdownRenderer content={turn.finalText} /></Box>
                 </Box>
             ) : null}
             {turn.status && turn.status !== 'ok' && turn.status !== 'running' ? (
