@@ -75,6 +75,7 @@ export function App({
 
     const [busy, setBusy] = React.useState(false)
     const [contextPercent, setContextPercent] = React.useState(0)
+    const [activityTick, setActivityTick] = React.useState(0)
 
     // 审批状态
     const [approvalPending, setApprovalPending] = React.useState(false)
@@ -95,6 +96,7 @@ export function App({
             dispatch({ type: 'turn_start', turn, input })
         },
         onAction: ({ turn, step, action, thinking }) => {
+            setActivityTick(t => t + 1)
             dispatch({
                 type: 'tool_action',
                 turn,
@@ -149,6 +151,7 @@ export function App({
         onMiddlewareReady(tuiMiddleware)
         onApprovalReady(requestApproval)
         onAssistantChunkReady((step, chunk) => {
+            setActivityTick(t => t + 1)
             dispatch({
                 type: 'assistant_chunk',
                 turn: currentTurnRef.current,
@@ -198,6 +201,7 @@ export function App({
                 approvalText={approvalText}
                 onApproval={handleApproval}
                 contextPercent={contextPercent}
+                activityTick={activityTick}
             />
         </Box>
     )

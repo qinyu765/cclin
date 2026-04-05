@@ -143,7 +143,7 @@
 **目标**：对齐 memo-code 完整能力。
 
 - [ ] 多 Agent 协作（`spawn_agent` / `send_input` / `wait` / `close_agent`）
-- [ ] Skills 系统（技能发现 + prompt 注入）
+- [x] Skills 系统（技能发现 + prompt 注入）
 - [x] `get_memory` 工具
 - [x] `search_files` 工具
 - [x] `update_plan` 工具

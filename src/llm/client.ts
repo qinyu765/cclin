@@ -127,21 +127,16 @@ export function createCallLLM(config: LLMClientConfig): CallLLM {
 
         // ─── 流式模式 ─────────────────────────────────────────────
         if (onChunk) {
-            const controller = new AbortController()
-            let timeoutId = setTimeout(() => controller.abort(new Error('LLM Stream idle timeout (>60s)')), 60000)
-            const resetTimeout = () => {
-                clearTimeout(timeoutId)
-                timeoutId = setTimeout(() => controller.abort(new Error('LLM Stream idle timeout (>60s)')), 60000)
-            }
+            const IDLE_TIMEOUT_MS = 60_000
+            const STALL_TIMEOUT_MS = 120_000 // no meaningful content for 2 min → stalled
 
             let stream
             try {
                 stream = await client.chat.completions.create({
                     ...requestParams,
                     stream: true,
-                }, { signal: controller.signal })
+                })
             } catch (err) {
-                clearTimeout(timeoutId)
                 throw err
             }
 
@@ -154,15 +149,44 @@ export function createCallLLM(config: LLMClientConfig): CallLLM {
             let completionTokens = 0
             let totalTokens = 0
 
-            try {
-                for await (const chunk of stream) {
-                    resetTimeout()
-                    const delta = chunk.choices?.[0]?.delta
+            // Use manual async iterator + Promise.race for reliable idle timeout
+            const iterator = stream[Symbol.asyncIterator]()
+            let lastMeaningfulAt = Date.now()
+
+            let done = false
+            while (!done) {
+                let timer: ReturnType<typeof setTimeout> | undefined
+                const timeoutPromise = new Promise<never>((_, reject) => {
+                    timer = setTimeout(() => reject(new Error('LLM Stream idle timeout (>60s)')), IDLE_TIMEOUT_MS)
+                })
+
+                let result: IteratorResult<any>
+                try {
+                    result = await Promise.race([
+                        iterator.next(),
+                        timeoutPromise,
+                    ])
+                } catch (err) {
+                    // Timeout or other error — try to close the stream
+                    try { await iterator.return?.() } catch { /* ignore */ }
+                    throw err
+                } finally {
+                    if (timer) clearTimeout(timer)
+                }
+
+                if (result.done) {
+                    done = true
+                    break
+                }
+
+                const chunk = result.value
+                const delta = chunk.choices?.[0]?.delta
 
                 // 文本 delta
                 if (delta?.content) {
                     textContent += delta.content
                     onChunk(delta.content)
+                    lastMeaningfulAt = Date.now()
                 }
 
                 // Reasoning delta (DeepSeek / proxy extensions)
@@ -171,10 +195,12 @@ export function createCallLLM(config: LLMClientConfig): CallLLM {
                 if (rd) {
                     reasoningContent += rd
                     if (onChunk) onChunk(rd)
+                    lastMeaningfulAt = Date.now()
                 }
 
                 // Tool call deltas（增量拼接）
                 if (delta?.tool_calls) {
+                    lastMeaningfulAt = Date.now()
                     for (const tc of delta.tool_calls) {
                         const existing = toolCallDeltas.get(tc.index)
                         if (existing) {
@@ -187,6 +213,14 @@ export function createCallLLM(config: LLMClientConfig): CallLLM {
                             })
                         }
                     }
+                }
+
+                // Stall detection: stream alive but no meaningful content
+                if (Date.now() - lastMeaningfulAt > STALL_TIMEOUT_MS) {
+                    try { await iterator.return?.() } catch { /* ignore */ }
+                    throw new Error(
+                        'LLM Stream stalled: no meaningful content for >120s',
+                    )
                 }
 
                 // Usage（最后一个 chunk 包含）
@@ -233,9 +267,6 @@ export function createCallLLM(config: LLMClientConfig): CallLLM {
                    completion: completionTokens,
                    total: totalTokens,
                },
-            }
-            } finally {
-                clearTimeout(timeoutId)
             }
         }
 

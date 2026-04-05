@@ -231,24 +231,46 @@ export async function runTurn(
             }
         }
 
-        // 调用 LLM
-        let normalized: ReturnType<typeof normalizeLLMResponse>
-        try {
-            const llmResult = await callLLM(
-                history,
-                deps.onAssistantChunk
-                    ? (chunk) => deps.onAssistantChunk!(step, chunk)
-                    : undefined,
-            )
-            normalized = normalizeLLMResponse(llmResult)
-        } catch (err) {
-            const msg = `LLM call failed: ${(err as Error).message}`
-            history.push({ role: 'assistant', content: msg })
-            status = 'error'
-            finalText = msg
-            errorMessage = msg
-            break
+        // 调用 LLM（超时自动重试，最多 3 次）
+        const MAX_RETRIES = 3
+        let normalized!: ReturnType<typeof normalizeLLMResponse>
+        let succeeded = false
+
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                const llmResult = await callLLM(
+                    history,
+                    deps.onAssistantChunk
+                        ? (chunk) => deps.onAssistantChunk!(step, chunk)
+                        : undefined,
+                )
+                normalized = normalizeLLMResponse(llmResult)
+                succeeded = true
+                break
+            } catch (err) {
+                const rawMsg = (err as Error).message
+                const isTimeout = rawMsg.includes('timeout') || rawMsg.includes('aborted') || rawMsg.includes('stalled')
+
+                if (!isTimeout || attempt === MAX_RETRIES) {
+                    // Non-timeout error or final retry exhausted
+                    const msg = isTimeout
+                        ? `⏱ Timed out after ${MAX_RETRIES} retries — you can continue chatting.`
+                        : `LLM call failed: ${rawMsg}`
+                    history.push({ role: 'assistant', content: msg })
+                    status = 'error'
+                    finalText = msg
+                    errorMessage = msg
+                    break
+                }
+
+                // Timeout but retries remain — notify user and retry
+                if (deps.onAssistantChunk) {
+                    deps.onAssistantChunk(step, `\n⏱ Timeout, retrying (${attempt}/${MAX_RETRIES})...\n`)
+                }
+            }
         }
+
+        if (!succeeded) break
 
         const { textContent, toolUseBlocks, usage, reasoningContent } =
             normalized

@@ -25,6 +25,7 @@ type MarkdownBlock =
     | { type: 'code_block'; lang: string; code: string }
     | { type: 'list_item'; text: string; indent: number }
     | { type: 'blockquote'; text: string }
+    | { type: 'table'; headers: string[]; rows: string[][] }
     | { type: 'hr' }
 
 function parseBlocks(raw: string): MarkdownBlock[] {
@@ -85,6 +86,27 @@ function parseBlocks(raw: string): MarkdownBlock[] {
                 text: listMatch[2] ?? '',
             })
             i++
+            continue
+        }
+
+        // Table (lines starting with |)
+        if (/^\s*\|/.test(line)) {
+            const tableLines: string[] = []
+            while (i < lines.length && /^\s*\|/.test(lines[i] ?? '')) {
+                tableLines.push(lines[i]!)
+                i++
+            }
+            // Parse cells: split by |, trim, filter empty
+            const dataRows = tableLines
+                .filter(l => !/^\s*\|[\s-:|]+\|\s*$/.test(l)) // skip separator rows
+                .map(l => l.split('|').map(c => c.trim()).filter(Boolean))
+            if (dataRows.length > 0) {
+                blocks.push({
+                    type: 'table',
+                    headers: dataRows[0]!,
+                    rows: dataRows.slice(1),
+                })
+            }
             continue
         }
 
@@ -201,6 +223,33 @@ function BlockRenderer({ block }: { block: MarkdownBlock }) {
                     <InlineText text={block.text} />
                 </Box>
             )
+        case 'table': {
+            const allRows = [block.headers, ...block.rows]
+            const colCount = block.headers.length
+            // Calculate column widths
+            const colWidths = Array.from({ length: colCount }, (_, ci) =>
+                Math.max(3, ...allRows.map(r => (r[ci] ?? '').length)),
+            )
+            const sep = '┼' + colWidths.map(w => '─'.repeat(w + 2)).join('┼') + '┼'
+            const fmtRow = (cells: string[], bold: boolean) => (
+                <Text {...(bold ? { bold: true } : {})}>
+                    {'│'}{cells.map((c, ci) => ` ${(c ?? '').padEnd(colWidths[ci] ?? 3)} │`).join('')}
+                </Text>
+            )
+            return (
+                <Box flexDirection="column">
+                    <Text color="gray">{sep}</Text>
+                    {fmtRow(block.headers, true)}
+                    <Text color="gray">{sep}</Text>
+                    {block.rows.map((row, ri) => (
+                        <Box key={ri} flexDirection="column">
+                            {fmtRow(row, false)}
+                        </Box>
+                    ))}
+                    <Text color="gray">{sep}</Text>
+                </Box>
+            )
+        }
         case 'hr':
             return <Text color="gray">{'─'.repeat(40)}</Text>
         case 'paragraph':

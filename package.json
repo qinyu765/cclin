@@ -3,8 +3,17 @@
   "version": "0.1.0",
   "description": "A production-grade CLI Code Agent",
   "type": "module",
+  "bin": {
+    "cclin": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "src/runtime/prompt.md"
+  ],
   "scripts": {
     "dev": "tsx src/index.ts",
+    "build": "tsc && node -e \"const fs=require('fs');const p=require('path');fs.mkdirSync(p.join('dist','runtime'),{recursive:true});fs.copyFileSync(p.join('src','runtime','prompt.md'),p.join('dist','runtime','prompt.md'))\"",
+    "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"

@@ -6,7 +6,8 @@
  */
 
 import React, { memo, useMemo } from 'react'
-import { Box, Static, Text } from 'ink'
+import { Box, Static, Text, useStdout } from 'ink'
+import { wrapTextCJK } from './cjk_text.js'
 import { MarkdownRenderer } from './chatwidget/markdown_renderer.js'
 import { TOOL_STATUS } from './types.js'
 import type {
@@ -60,6 +61,39 @@ const SystemCell = memo(function SystemCell({ message }: { message: SystemMessag
     )
 })
 
+/** CJK-aware text block with optional colored prefix on the first line. */
+const CJKTextBlock = memo(function CJKTextBlock({
+    text,
+    prefix = '',
+    prefixColor,
+}: {
+    text: string
+    prefix?: string
+    prefixColor?: string
+}) {
+    const { stdout } = useStdout()
+    const columns = stdout?.columns ?? process.stdout?.columns ?? 80
+    // Reserve space for the prefix on each line
+    const prefixWidth = prefix.length
+    const contentCols = Math.max(1, columns - prefixWidth)
+    const wrappedLines = wrapTextCJK(text, contentCols)
+
+    return (
+        <Box flexDirection="column">
+            {wrappedLines.map((line, i) => (
+                <Box key={i} flexDirection="row">
+                    <Box width={prefixWidth}>
+                        {i === 0
+                            ? <Text color={prefixColor}>{prefix}</Text>
+                            : <Text>{' '.repeat(prefixWidth)}</Text>}
+                    </Box>
+                    <Text>{line}</Text>
+                </Box>
+            ))}
+        </Box>
+    )
+})
+
 /** 单步：思考 + 工具调用。 */
 const StepCell = memo(function StepCell({
     step,
@@ -91,10 +125,7 @@ const StepCell = memo(function StepCell({
             ) : null}
             {/* Show streaming assistant text (before turn_final) */}
             {!isCompleted && !step.action && step.assistantText ? (
-                <Box flexDirection="row">
-                    <Box width={3}><Text color="red">{'>> '}</Text></Box>
-                    <Box flexGrow={1}><Text>{step.assistantText}</Text></Box>
-                </Box>
+                <CJKTextBlock prefix=">> " prefixColor="red" text={step.assistantText} />
             ) : null}
         </Box>
     )

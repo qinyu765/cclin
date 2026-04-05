@@ -125,12 +125,13 @@ Loaded from: ${soul.path}
 ${soul.content}`
 }
 
-/** loadSystemPrompt 的配置参数。 */
 export type LoadSystemPromptOptions = {
     /** 项目根目录，默认 process.cwd()。 */
     cwd?: string
     /** 工具的 Markdown 描述文本（对应 {{tools}} 占位符）。 */
     toolsText?: string
+    /** Skills section 文本（由 renderSkillsSection 生成）。 */
+    skillsText?: string
 }
 
 /**
@@ -174,7 +175,12 @@ export async function loadSystemPrompt(
         prompt = `${prompt}\n\n${soulSection}`
     }
 
-    // 5. 追加 AGENTS.md（放在越后面，优先级越高）
+    // 5. 追加 Skills section（放在 AGENTS.md 之前）
+    if (options.skillsText) {
+        prompt = `${prompt}\n\n${options.skillsText}`
+    }
+
+    // 6. 追加 AGENTS.md（放在越后面，优先级越高）
     const agents = await readProjectAgentsMd(cwd)
     if (agents) {
         prompt = `${prompt}\n\n## Project AGENTS.md\nLoaded from: ${agents.path}\n\n${agents.content}`

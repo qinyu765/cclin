@@ -24,6 +24,7 @@ const SLASH_COMMANDS = [
     { name: '/compact', desc: 'Compact context history' },
     { name: '/model', desc: 'Show current model info' },
     { name: '/approve', desc: 'Change approval policy' },
+    { name: '/retry', desc: 'Retry last message' },
     { name: '/clear', desc: 'Clear conversation' },
     { name: '/exit', desc: 'Exit cclin' },
 ] as const
@@ -37,6 +38,8 @@ export type InputAreaProps = {
     approvalText?: string
     onApproval?: (approved: boolean) => void
     contextPercent?: number
+    /** Increments on each LLM activity (chunk, tool call) to reset idle timer. */
+    activityTick?: number
 }
 
 // ─── 组件 ─────────────────────────────────────────────────────────────────
@@ -48,6 +51,7 @@ export function InputArea({
     approvalText,
     onApproval,
     contextPercent = 0,
+    activityTick = 0,
 }: InputAreaProps) {
     const [editor, setEditor] = useState({ value: '', cursor: 0 })
     const editorRef = useRef(editor)
@@ -179,7 +183,7 @@ export function InputArea({
                         <Text color="cyan">▊</Text>
                     </Box>
                 </Box>
-                <Footer busy={false} contextPercent={contextPercent} approvalPending />
+                <Footer busy={false} contextPercent={contextPercent} approvalPending activityTick={activityTick} />
             </Box>
         )
     }
@@ -192,7 +196,7 @@ export function InputArea({
                     <Text color="gray">❯ </Text>
                     <Text color="gray">{editor.value}</Text>
                 </Box>
-                <Footer busy contextPercent={contextPercent} />
+                <Footer busy contextPercent={contextPercent} activityTick={activityTick} />
             </Box>
         )
     }
@@ -240,7 +244,7 @@ export function InputArea({
                     <Text color="gray" italic>Tab to complete • ↑↓ to select</Text>
                 </Box>
             ) : null}
-            <Footer busy={false} contextPercent={contextPercent} />
+            <Footer busy={false} contextPercent={contextPercent} activityTick={activityTick} />
         </Box>
     )
 }
@@ -251,20 +255,40 @@ function Footer({
     busy,
     contextPercent,
     approvalPending = false,
+    activityTick = 0,
 }: {
     busy: boolean
     contextPercent: number
     approvalPending?: boolean
+    activityTick?: number
 }) {
+    const [elapsed, setElapsed] = useState(0)
+
+    // Reset on busy start or any LLM activity (chunk/action)
+    useEffect(() => {
+        setElapsed(0)
+    }, [busy, activityTick])
+
+    useEffect(() => {
+        if (!busy) return
+        const id = setInterval(() => setElapsed(s => s + 1), 1000)
+        return () => clearInterval(id)
+    }, [busy])
+
     const helpText = approvalPending
         ? 'y allow • n deny'
         : 'Enter send • /compact • exit'
+
+    const timerColor = elapsed >= 30 ? 'red' : elapsed >= 15 ? 'yellow' : 'gray'
+    const timerSuffix = elapsed >= 30 ? ' ⚠ stalled?' : ''
 
     return (
         <Box justifyContent="space-between" marginTop={0}>
             <Box>
                 {busy ? (
-                    <Text color="yellow">Working...</Text>
+                    <Text color={timerColor}>
+                        Working... ({elapsed}s){timerSuffix}
+                    </Text>
                 ) : (
                     <Text color="gray">{helpText}</Text>
                 )}

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * @file 入口文件 — Ink TUI，通过 Session 驱动 ReAct 循环。
  *
@@ -25,6 +26,7 @@ import { listDirectoryTool } from './tools/list-directory.js'
 import { updatePlanTool } from './tools/update-plan.js'
 import { getMemoryTool } from './tools/get-memory.js'
 import { searchFilesTool } from './tools/search-files.js'
+import { loadSkills, renderSkillsSection } from './runtime/skills.js'
 import { App } from './tui/app.js'
 import type {
     AgentMiddleware,
@@ -78,10 +80,15 @@ const callLLM = createCallLLM({
 const approvalManager = new ApprovalManager({ policy: 'once' })
 const orchestrator = new ToolOrchestrator(router, approvalManager)
 
+// 加载 Skills
+const skills = await loadSkills({ cwd: process.cwd() })
+const skillsText = renderSkillsSection(skills) ?? undefined
+
 // 动态加载系统提示词
 const systemPrompt = await loadSystemPrompt({
     cwd: process.cwd(),
     toolsText: router.toMarkdown(),
+    skillsText,
 })
 
 // 创建 Token 计数器
@@ -95,6 +102,8 @@ const tokenCounter = createTokenCounter()
 let session: Session | null = null
 let requestApprovalFn: ((req: ApprovalRequest) => Promise<ApprovalDecision>) | null = null
 let onAssistantChunkFn: ((step: number, chunk: string) => void) | null = null
+
+let lastInput = ''
 
 const handleSubmit = async (input: string) => {
     if (!session) return
@@ -114,6 +123,14 @@ const handleSubmit = async (input: string) => {
         return
     }
 
+    // /retry 命令 — 重新发送上一次用户输入
+    if (input === '/retry') {
+        if (!lastInput) return
+        await session.runTurn(lastInput)
+        return
+    }
+
+    lastInput = input
     await session.runTurn(input)
 }
 
