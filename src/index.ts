@@ -130,6 +130,18 @@ const handleSubmit = async (input: string) => {
         return
     }
 
+    // /clear 命令 — 清空当前会话上下文
+    if (input === '/clear') {
+        session.getHistory().length = 0 // Clear array
+        // UI 层的清空逻辑在 app.tsx 中处理 (dispatch { type: 'clear_all' })
+        return
+    }
+
+    // Capture any other / command that isn't handled and block it from LLM
+    if (input.startsWith('/')) {
+        return // Do not send random slashes to the LLM
+    }
+
     lastInput = input
     await session.runTurn(input)
 }

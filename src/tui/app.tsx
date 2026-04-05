@@ -178,8 +178,12 @@ export function App({
             exit()
             return
         }
+        if (input.trim() === '/clear') {
+            console.clear()
+            dispatch({ type: 'clear_all' })
+        }
         await onSubmit(input)
-    }, [onSubmit, onExit, exit])
+    }, [onSubmit, onExit, exit, dispatch])
 
     return (
         <Box flexDirection="column" padding={1}>

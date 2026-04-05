@@ -62,6 +62,13 @@ export function InputArea({
         setEditor(next)
     }, [])
 
+    const slashIdxRef = useRef(0)
+    const commitSlashIdx = useCallback((next: number | ((i: number) => number)) => {
+        const newVal = typeof next === 'function' ? next(slashIdxRef.current) : next
+        slashIdxRef.current = newVal
+        setSlashIdx(newVal)
+    }, [])
+
     // Compute matching slash command suggestions
     const slashSuggestions = useMemo(() => {
         if (!editor.value.startsWith('/') || editor.value.includes(' ')) return []
@@ -82,29 +89,48 @@ export function InputArea({
         if (busy) return
 
         // Tab: accept slash suggestion
-        if (key.tab && slashSuggestions.length > 0) {
-            const selected = slashSuggestions[slashIdx]
+        const getActiveSuggestions = () => {
+            const val = editorRef.current.value
+            if (!val.startsWith('/') || val.includes(' ')) return []
+            return SLASH_COMMANDS.filter(c => c.name.startsWith(val))
+        }
+        
+        const activeSuggestions = getActiveSuggestions()
+
+        if (key.tab && activeSuggestions.length > 0) {
+            const selected = activeSuggestions[slashIdxRef.current]
             if (selected) {
                 commitEditor({ value: selected.name, cursor: selected.name.length })
-                setSlashIdx(0)
+                commitSlashIdx(0)
             }
             return
         }
 
         // Arrow up/down in slash suggestion mode
-        if (slashSuggestions.length > 0) {
+        if (activeSuggestions.length > 0) {
             if (key.upArrow) {
-                setSlashIdx(i => Math.max(0, i - 1))
+                commitSlashIdx(i => Math.max(0, i - 1))
                 return
             }
             if (key.downArrow) {
-                setSlashIdx(i => Math.min(slashSuggestions.length - 1, i + 1))
+                commitSlashIdx(i => Math.min(activeSuggestions.length - 1, i + 1))
                 return
             }
         }
 
         // Enter 提交
         if (key.return) {
+            // If slash suggestions are open, Enter should select and submit the highlighted command
+            if (activeSuggestions.length > 0) {
+                const selected = activeSuggestions[slashIdxRef.current]
+                if (selected) {
+                    commitEditor({ value: '', cursor: 0 })
+                    onSubmit(selected.name)
+                    commitSlashIdx(0)
+                    return
+                }
+            }
+
             const trimmed = editorRef.current.value.trim()
             if (!trimmed) return
             commitEditor({ value: '', cursor: 0 })

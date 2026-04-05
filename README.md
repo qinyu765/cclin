@@ -91,13 +91,22 @@ cclin/
 - **`.agents/skills/*/SKILL.md`** — 技能文件
 - **`mcp_config.json`** — MCP Server 配置
 
-## 📦 构建
+## 📦 安装
+
+**方式一：从 npm 安装（推荐）**
+
+```bash
+npm install -g @hflin/cclin
+cclin
+```
+
+**方式二：从源码构建**
 
 ```bash
 # 编译 TypeScript
 pnpm run build
 
-# 全局安装（可选）
+# 本地全局链接
 npm link
 cclin
 ```
