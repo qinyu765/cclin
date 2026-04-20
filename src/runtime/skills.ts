@@ -10,6 +10,7 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -34,13 +35,25 @@ const DEFAULT_MAX_SKILLS = 100
 const MAX_NAME_LEN = 64
 const MAX_DESCRIPTION_LEN = 1024
 
-const SKILLS_USAGE_RULES = `### How to use skills
-- If the user names a skill or the task clearly matches a skill's description, use that skill.
-- To use a skill: open its \`SKILL.md\` with read_file, follow the instructions inside.
-- If \`SKILL.md\` references relative paths, resolve them relative to the skill directory.
-- Keep context small: only load files directly needed, don't bulk-load everything.
-- When variants exist (frameworks, providers, domains), pick only the relevant reference file(s) and note that choice.
-- Safety and fallback: If a skill can't be applied cleanly (missing files, unclear instructions), state the issue, pick the next-best approach, and continue.`
+/**
+ * 读取 skills-usage.md 文件内容作为技能使用规则。
+ * 文件与本模块同目录，以便独立维护和扩充。
+ */
+async function loadSkillsUsageRules(): Promise<string> {
+    const moduleDir = dirname(fileURLToPath(import.meta.url))
+    const rulesPath = join(moduleDir, 'skills-usage.md')
+    try {
+        return await readFile(rulesPath, 'utf-8')
+    } catch {
+        // Fallback: inline minimal rules if file is missing
+        return [
+            '### How to use skills',
+            '- If the user names a skill or the task matches a skill description, use that skill.',
+            '- To use a skill: open its `SKILL.md` with read_file and follow the instructions.',
+            '- Resolve relative paths inside SKILL.md relative to the skill directory.',
+        ].join('\n')
+    }
+}
 
 // ─── Frontmatter Parsing ─────────────────────────────────────────────────────
 
@@ -204,10 +217,14 @@ export async function loadSkills(
 
 /**
  * 将 skills 列表渲染为可注入 system prompt 的文本。
- * 如果没有 skills 则返回 null。
+ * 返回 null 表示没有可用的 skills。
+ *
+ * @param skills - 已发现的技能元数据列表
+ * @param usageRules - 来自 skills-usage.md 的使用规则文本
  */
 export function renderSkillsSection(
     skills: SkillMetadata[],
+    usageRules: string,
 ): string | null {
     if (skills.length === 0) return null
 
@@ -223,6 +240,19 @@ export function renderSkillsSection(
         lines.push(`- **${skill.name}**: ${skill.description} (file: ${skill.path})`)
     }
     lines.push('')
-    lines.push(SKILLS_USAGE_RULES)
+    lines.push(usageRules.trim())
     return lines.join('\n')
+}
+
+/**
+ * 加载 skills 并渲染完整的 skills section。
+ * 封装了 loadSkillsUsageRules + renderSkillsSection 的组合调用，
+ * 供 prompt 组装层直接使用。
+ */
+export async function buildSkillsSection(
+    skills: SkillMetadata[],
+): Promise<string | null> {
+    if (skills.length === 0) return null
+    const usageRules = await loadSkillsUsageRules()
+    return renderSkillsSection(skills, usageRules)
 }

@@ -1,11 +1,11 @@
 /**
  * @file Unit tests for Skills system (Phase 10).
  *
- * Tests: parseSkillFile, renderSkillsSection
+ * Tests: parseSkillFile, renderSkillsSection, buildSkillsSection
  */
 
 import { describe, it, expect } from 'vitest'
-import { parseSkillFile, renderSkillsSection } from './skills.js'
+import { parseSkillFile, renderSkillsSection, buildSkillsSection } from './skills.js'
 import type { SkillMetadata } from './skills.js'
 
 // ─── parseSkillFile ──────────────────────────────────────────────────────────
@@ -85,9 +85,11 @@ Body`
 
 // ─── renderSkillsSection ─────────────────────────────────────────────────────
 
+const MOCK_RULES = '### How to use skills\n- Use the skill when it matches.'
+
 describe('renderSkillsSection', () => {
     it('should return null for empty skills array', () => {
-        expect(renderSkillsSection([])).toBeNull()
+        expect(renderSkillsSection([], MOCK_RULES)).toBeNull()
     })
 
     it('should render all skills with name and description', () => {
@@ -96,13 +98,42 @@ describe('renderSkillsSection', () => {
             { name: 'blog-writer', description: 'Write blogs', path: '/b' },
         ]
 
-        const result = renderSkillsSection(skills)!
+        const result = renderSkillsSection(skills, MOCK_RULES)!
 
         expect(result).toContain('## Skills')
         expect(result).toContain('**git-push**')
         expect(result).toContain('Push changes')
         expect(result).toContain('**blog-writer**')
         expect(result).toContain('Write blogs')
+        expect(result).toContain('### How to use skills')
+    })
+
+    it('should include usage rules in rendered output', () => {
+        const skills: SkillMetadata[] = [
+            { name: 'test-skill', description: 'A test skill', path: '/c' },
+        ]
+        const rules = '### Custom rules\n- Rule A\n- Rule B'
+        const result = renderSkillsSection(skills, rules)!
+        expect(result).toContain('### Custom rules')
+        expect(result).toContain('- Rule A')
+    })
+})
+
+// ─── buildSkillsSection ──────────────────────────────────────────────────────
+
+describe('buildSkillsSection', () => {
+    it('should return null for empty skills array', async () => {
+        expect(await buildSkillsSection([])).toBeNull()
+    })
+
+    it('should return a non-null string for non-empty skills', async () => {
+        const skills: SkillMetadata[] = [
+            { name: 'git-push', description: 'Push changes', path: '/a' },
+        ]
+        const result = await buildSkillsSection(skills)
+        expect(result).not.toBeNull()
+        expect(result).toContain('**git-push**')
+        // Usage rules (from file or fallback) should be present
         expect(result).toContain('### How to use skills')
     })
 })

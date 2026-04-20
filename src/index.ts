@@ -31,7 +31,7 @@ import { rememberNoteTool } from './tools/remember-note.js'
 import { searchHistoryTool } from './tools/search-history.js'
 import { createSkillTool } from './tools/create-skill.js'
 import { searchFilesTool } from './tools/search-files.js'
-import { loadSkills, renderSkillsSection } from './runtime/skills.js'
+import { loadSkills, buildSkillsSection } from './runtime/skills.js'
 import { createSpawnAgentTool } from './tools/spawn-agent.js'
 import { SubAgentManager } from './tools/subagent-manager.js'
 import { createAsyncSubAgentTools } from './tools/subagent-tools.js'
@@ -94,7 +94,7 @@ const childExecuteTool = childOrchestrator.createExecuteTool()
 
 // 加载 Skills
 const skills = await loadSkills({ cwd: process.cwd() })
-const skillsText = renderSkillsSection(skills) ?? undefined
+const skillsText = (await buildSkillsSection(skills)) ?? undefined
 
 // 动态加载系统提示词
 const systemPrompt = await loadSystemPrompt({
