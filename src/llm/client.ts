@@ -3,6 +3,8 @@
  *
  * 设计：工厂函数 `createCallLLM(config)` 返回一个 `CallLLM`。
  * 这使得 LLM 依赖可注入且可测试。
+ *
+ * 同时导出 OpenAIProvider 类，注册到 Provider Registry。
  */
 
 import OpenAI from 'openai'
@@ -16,6 +18,8 @@ import {
     resolveModelProfile,
     buildChatCompletionRequest,
 } from '../runtime/model-profile.js'
+import { registerProvider } from './provider.js'
+import type { LLMProvider, ProviderConfig } from './provider.js'
 
 // ─── 配置 ─────────────────────────────────────────────────────────────────────
 
@@ -63,8 +67,27 @@ function toOpenAIMessage(
             tool_call_id: msg.tool_call_id,
         }
     }
-    // system | user 角色
-    return { role: msg.role, content: msg.content }
+    if (msg.role === 'user') {
+        if (typeof msg.content === 'string') {
+            return { role: 'user', content: msg.content }
+        }
+        // 多模态内容：直接透传给 OpenAI Vision API
+        return {
+            role: 'user',
+            content: msg.content.map((part) => {
+                if (part.type === 'text') return { type: 'text' as const, text: part.text }
+                return {
+                    type: 'image_url' as const,
+                    image_url: {
+                        url: part.image_url.url,
+                        detail: part.image_url.detail ?? 'auto',
+                    },
+                }
+            }),
+        }
+    }
+    // system 角色
+    return { role: msg.role, content: msg.content as string }
 }
 
 /**
@@ -327,3 +350,20 @@ export function createCallLLM(config: LLMClientConfig): CallLLM {
         return response
     }
 }
+
+// ─── OpenAI Provider ──────────────────────────────────────────────────────
+
+/**
+ * OpenAI Provider — wraps createCallLLM as an LLMProvider.
+ * Also supports OpenAI-compatible APIs (NewAPI, DeepSeek, etc.).
+ */
+export class OpenAIProvider implements LLMProvider {
+    readonly name = 'openai'
+
+    createCallLLM(config: ProviderConfig): CallLLM {
+        return createCallLLM(config)
+    }
+}
+
+// Auto-register on module load
+registerProvider('openai', () => new OpenAIProvider())

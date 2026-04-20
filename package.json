@@ -23,12 +23,13 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
-    "dotenv": "^16.4.7",
     "gpt-tokenizer": "^3.4.0",
     "ink": "^6.8.0",
     "ink-text-input": "^6.0.0",
     "openai": "^4.78.1",
-    "react": "^19.2.4"
+    "react": "^19.2.4",
+    "smol-toml": "^1.6.1",
+    "unicode-animations": "^1.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
