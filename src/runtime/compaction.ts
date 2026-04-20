@@ -50,9 +50,26 @@ export const CONTEXT_SUMMARY_PREFIX =
  * 截断过长的消息内容。
  *
  * 防止压缩请求本身太大（比如一个工具返回了 10 万字的文件内容）。
+ * 同时处理多模态内容：ContentPart[] 中提取文字，图片块替换为 [image] 占位符。
  */
-function normalizeContent(content: string): string {
-    const compact = content.replace(/\r\n/g, '\n').trim()
+function normalizeContent(content: string | unknown): string {
+    let text: string
+    if (typeof content === 'string') {
+        text = content
+    } else if (Array.isArray(content)) {
+        // 多模态内容块数组：提取文字，图片用占位符
+        text = content
+            .map((part: unknown) => {
+                const p = part as { type: string; text?: string }
+                if (p.type === 'text') return p.text ?? ''
+                return '[image]'
+            })
+            .join('\n')
+    } else {
+        text = String(content)
+    }
+
+    const compact = text.replace(/\r\n/g, '\n').trim()
     if (compact.length <= MAX_MESSAGE_CONTENT_CHARS) {
         return compact
     }
@@ -93,6 +110,8 @@ function messageToTranscriptLine(
  */
 export function isContextSummaryMessage(message: ChatMessage): boolean {
     if (message.role !== 'user') return false
+    // 多模态消息（ContentPart[]）不可能是压缩摘要
+    if (typeof message.content !== 'string') return false
     return message.content.startsWith(`${CONTEXT_SUMMARY_PREFIX}\n`)
 }
 
@@ -121,20 +140,32 @@ export function buildCompactionUserPrompt(
 /**
  * 用压缩摘要重建历史数组。
  *
- * 新历史结构：[system (如有)] + [摘要消息]
- * 这样历史从完整对话变为一条摘要，大幅减少 token 数。
+ * 新历史结构：[system (如有)] + [摘要消息] + [最近 N 条消息]
+ * 保留尾部消息，确保 LLM 记得最近的对话内容。
+ *
+ * @param systemMessage — 系统消息（如有）
+ * @param summary — 压缩后的摘要文本
+ * @param recentMessages — 需要保留的最近消息列表（可选）
  */
 export function buildCompactedHistory(
     systemMessage: ChatMessage | undefined,
     summary: string,
+    recentMessages: ChatMessage[] = [],
 ): ChatMessage[] {
     const summaryMessage: ChatMessage = {
         role: 'user',
         content: `${CONTEXT_SUMMARY_PREFIX}\n${summary}`,
     }
 
-    if (systemMessage) {
-        return [systemMessage, summaryMessage]
-    }
-    return [summaryMessage]
+    const result: ChatMessage[] = []
+    if (systemMessage) result.push(systemMessage)
+    result.push(summaryMessage)
+    result.push(...recentMessages)
+    return result
 }
+
+/**
+ * Number of recent messages to preserve after compaction.
+ * These are kept verbatim to maintain short-term context continuity.
+ */
+export const COMPACTION_TAIL_WINDOW = 6

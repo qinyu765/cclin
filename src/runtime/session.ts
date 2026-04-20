@@ -30,6 +30,7 @@ import type {
     AgentHooks,
     AgentMiddleware,
     HistorySink,
+    UserContent,
 } from '../types.js'
 import { createHistoryEvent } from './history.js'
 
@@ -144,16 +145,17 @@ export class Session {
      * 委托给 react-loop.ts 的 runTurn()，传入当前 history。
      * history 会被 runTurn() 就地修改（追加用户/助手/工具消息）。
      */
-    async runTurn(input: string): Promise<TurnResult> {
+    async runTurn(input: UserContent): Promise<TurnResult> {
         this.turnIndex += 1
 
-        // 写入 turn_start 事件
+        // 写入 turn_start 事件（content 序列化为字符串记录）
         if (this.historySink) {
+            const contentStr = typeof input === 'string' ? input : '[multimodal]'
             await this.historySink.append(createHistoryEvent({
                 sessionId: this.id,
                 type: 'turn_start',
                 turn: this.turnIndex,
-                content: input,
+                content: contentStr,
                 role: 'user',
             }))
         }
@@ -339,7 +341,9 @@ export class Session {
             sessionId: this.id,
             turn: this.turnIndex,
             title,
-            originalPrompt: this.history[1]?.content || '',
+            originalPrompt: typeof this.history[1]?.content === 'string'
+                ? (this.history[1]?.content || '')
+                : '[multimodal]',
         })
 
         return title

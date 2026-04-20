@@ -165,6 +165,7 @@ export async function loadSystemPrompt(
         date: new Date().toISOString(),
         user: resolveUsername(),
         pwd: cwd,
+        platform: `${process.platform} (${os.release()})`,
         soul_section: soulSection,
         tools: options.toolsText ?? 'No tools available.',
     }

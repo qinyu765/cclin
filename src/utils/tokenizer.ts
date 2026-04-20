@@ -39,7 +39,11 @@ function messagePayloadForCounting(message: ChatMessage): string {
     if (message.role === 'tool') {
         return `${message.content}\n${message.tool_call_id}\n${message.name ?? ''}`
     }
+    // system / user：user content 可能是多模态数组
+    if (typeof message.content === 'string') return message.content
     return message.content
+        .map((p) => (p.type === 'text' ? p.text : '[image]'))
+        .join('\n')
 }
 
 /**

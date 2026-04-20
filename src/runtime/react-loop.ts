@@ -21,6 +21,7 @@ import type {
     TokenUsage,
     TokenCounter,
     CompactResult,
+    UserContent,
 } from '../types.js'
 import { runHook, snapshotHistory } from './hooks.js'
 import type { HookRunnerMap } from './hooks.js'
@@ -172,7 +173,7 @@ const defaultExecuteTool: ExecuteTool = async (
  * @param deps  - 依赖注入（history, callLLM, executeTool）
  */
 export async function runTurn(
-    input: string,
+    input: UserContent,
     deps: RunTurnDeps,
 ): Promise<TurnResult> {
     const { history, callLLM } = deps
@@ -194,12 +195,15 @@ export async function runTurn(
     // 1. 将用户输入追加到历史
     history.push({ role: 'user', content: input })
 
+    // 用于 Hook payload 的文本摘要（多模态时用 [multimodal image]）
+    const inputText = typeof input === 'string' ? input : '[multimodal image]'
+
     // Phase 7：发射 onTurnStart Hook
     if (hookRunners) {
         await runHook(hookRunners, 'onTurnStart', {
             sessionId,
             turn: turnIndex,
-            input,
+            input: inputText,
             history: snapshotHistory(history),
         })
     }
