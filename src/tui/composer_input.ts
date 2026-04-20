@@ -125,6 +125,72 @@ export function moveCursorRight(value: string, cursor: number): number {
     return nextCursorIndex(value, cursor)
 }
 
+/**
+ * Move cursor up one visual row in a wrapped layout.
+ * Returns updated cursor index in the string.
+ */
+export function moveCursorUp(
+    value: string,
+    cursor: number,
+    columns: number,
+): number {
+    const layout = getWrappedCursorLayout(value, cursor, columns)
+    if (layout.row <= 0) return 0 // already on first row, go to start
+    const targetRow = layout.row - 1
+    const targetLine = layout.lines[targetRow]
+    if (!targetLine) return 0
+    // Place cursor at the same column offset, clamped to line length
+    const targetOffset = Math.min(layout.cursorInRow, targetLine.text.length)
+    return clampCursorToBoundary(value, targetLine.start + targetOffset)
+}
+
+/**
+ * Move cursor down one visual row in a wrapped layout.
+ * Returns updated cursor index in the string.
+ */
+export function moveCursorDown(
+    value: string,
+    cursor: number,
+    columns: number,
+): number {
+    const layout = getWrappedCursorLayout(value, cursor, columns)
+    if (layout.row >= layout.lines.length - 1) return value.length // last row, go to end
+    const targetRow = layout.row + 1
+    const targetLine = layout.lines[targetRow]
+    if (!targetLine) return value.length
+    const targetOffset = Math.min(layout.cursorInRow, targetLine.text.length)
+    return clampCursorToBoundary(value, targetLine.start + targetOffset)
+}
+
+/**
+ * Insert a newline character at cursor position.
+ */
+export function insertNewline(value: string, cursor: number): EditorBuffer {
+    return insertAtCursor(value, cursor, '\n')
+}
+
+/**
+ * Delete all content from cursor to the beginning of the current line.
+ * If cursor is at line start, deletes the preceding newline (joins lines).
+ */
+export function deleteToLineStart(
+    value: string,
+    cursor: number,
+): EditorBuffer {
+    const safe = clampCursorToBoundary(value, cursor)
+    if (safe <= 0) return { value, cursor: 0 }
+    // Find the start of the current line
+    const lastNewline = value.lastIndexOf('\n', safe - 1)
+    const lineStart = lastNewline === -1 ? 0 : lastNewline + 1
+    if (safe === lineStart && lastNewline >= 0) {
+        // Cursor at line start: delete the newline to join with prev line
+        const next = value.slice(0, lastNewline) + value.slice(safe)
+        return { value: next, cursor: lastNewline }
+    }
+    const next = value.slice(0, lineStart) + value.slice(safe)
+    return { value: next, cursor: lineStart }
+}
+
 // ─── Editor operations ────────────────────────────────────────────────────
 
 export function insertAtCursor(

@@ -19,7 +19,11 @@ import type {
     AgentMiddleware,
     ApprovalRequest,
     ApprovalDecision,
+    UserContent,
 } from '../types.js'
+import type { ImageAttachment } from './image-attach.js'
+import { buildMultimodalContent } from './image-attach.js'
+import { resolveCommand } from './commands.js'
 
 // ─── Props ───────────────────────────────────────────────────────────────
 
@@ -35,7 +39,7 @@ export type AppProps = {
     /** 当前工作目录，用于 Header 展示 */
     cwd: string
     /** 用户提交输入时的处理函数（由 Session 提供） */
-    onSubmit: (input: string) => Promise<void>
+    onSubmit: (content: UserContent) => Promise<void>
     /** 用户输入 "exit" 时触发，用于通知外层清理资源 */
     onExit: () => void
     /** TUI 中间件就绪时的回调，将中间件注册到 Session */
@@ -172,17 +176,37 @@ export function App({
     }, [])
 
     // 提交处理
-    const handleSubmit = useCallback(async (input: string) => {
+    const handleSubmit = useCallback(async (input: string, attachments?: ImageAttachment[]) => {
         if (input.toLowerCase() === 'exit') {
             onExit()
             exit()
             return
         }
-        if (input.trim() === '/clear') {
-            console.clear()
-            dispatch({ type: 'clear_all' })
+
+        // 利用中央注册表解析 slash 命令（支持别名、大小写不敏感）
+        const trimmed = input.trim()
+        const cmd = resolveCommand(trimmed)
+        if (cmd) {
+            if (cmd.name === 'exit') {
+                onExit()
+                exit()
+                return
+            }
+            if (cmd.name === 'clear') {
+                console.clear()
+                dispatch({ type: 'clear_all' })
+                return
+            }
+            // 其他 slash 命令（compact / model / approve / retry 等）
+            // 作为普通消息发送给 LLM，由 session 层解释执行
         }
-        await onSubmit(input)
+
+        // 有附件时构建多模态 content，否则纯文本
+        const content: UserContent =
+            attachments && attachments.length > 0
+                ? buildMultimodalContent(input, attachments)
+                : input
+        await onSubmit(content)
     }, [onSubmit, onExit, exit, dispatch])
 
     return (

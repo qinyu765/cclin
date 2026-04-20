@@ -3,7 +3,11 @@ import {
     clampCursorToBoundary,
     moveCursorLeft,
     moveCursorRight,
+    moveCursorUp,
+    moveCursorDown,
     insertAtCursor,
+    insertNewline,
+    deleteToLineStart,
     backspaceAtCursor,
     getWrappedCursorLayout,
 } from './composer_input.js'
@@ -97,5 +101,85 @@ describe('getWrappedCursorLayout', () => {
         expect(layout.lines).toHaveLength(1)
         expect(layout.row).toBe(0)
         expect(layout.cursorInRow).toBe(0)
+    })
+})
+
+describe('moveCursorUp', () => {
+    it('moves from second line to first line', () => {
+        // "abc\ndef", cursor at 'd' (index 4), columns=80
+        const result = moveCursorUp('abc\ndef', 4, 80)
+        expect(result).toBe(0) // beginning of first row (col 0 on row 0)
+    })
+    it('on first row goes to position 0', () => {
+        expect(moveCursorUp('hello', 3, 80)).toBe(0)
+    })
+    it('preserves column offset when moving up', () => {
+        // "abcde\nfgh", cursor at 'g' (index 7, col 1 on row 1)
+        const result = moveCursorUp('abcde\nfgh', 7, 80)
+        expect(result).toBe(1) // col 1 on row 0 = index 1
+    })
+    it('clamps column when upper line is shorter', () => {
+        // "ab\ndefgh", cursor at 'h' (index 8, col 4 on row 1)
+        const result = moveCursorUp('ab\ndefgh', 8, 80)
+        expect(result).toBe(2) // clamped to end of "ab" = index 2
+    })
+})
+
+describe('moveCursorDown', () => {
+    it('moves from first line to second line', () => {
+        // "abc\ndef", cursor at 'a' (index 0), columns=80
+        const result = moveCursorDown('abc\ndef', 0, 80)
+        expect(result).toBe(4) // col 0 on row 1 = index 4
+    })
+    it('on last row goes to end', () => {
+        expect(moveCursorDown('hello', 2, 80)).toBe(5)
+    })
+    it('preserves column offset when moving down', () => {
+        // "abcde\nfgh", cursor at 'b' (index 1, col 1 on row 0)
+        const result = moveCursorDown('abcde\nfgh', 1, 80)
+        expect(result).toBe(7) // col 1 on row 1 = index 7
+    })
+})
+
+describe('insertNewline', () => {
+    it('inserts newline at cursor', () => {
+        const r = insertNewline('abc', 1)
+        expect(r.value).toBe('a\nbc')
+        expect(r.cursor).toBe(2)
+    })
+    it('inserts at start', () => {
+        const r = insertNewline('abc', 0)
+        expect(r.value).toBe('\nabc')
+        expect(r.cursor).toBe(1)
+    })
+    it('inserts at end', () => {
+        const r = insertNewline('abc', 3)
+        expect(r.value).toBe('abc\n')
+        expect(r.cursor).toBe(4)
+    })
+})
+
+describe('deleteToLineStart', () => {
+    it('deletes from cursor to line start on single line', () => {
+        const r = deleteToLineStart('hello', 3)
+        expect(r.value).toBe('lo')
+        expect(r.cursor).toBe(0)
+    })
+    it('deletes within second line only', () => {
+        // "abc\ndef", cursor at 'f' (index 6)
+        const r = deleteToLineStart('abc\ndef', 6)
+        expect(r.value).toBe('abc\nf')
+        expect(r.cursor).toBe(4) // start of second line
+    })
+    it('at line start joins with previous line', () => {
+        // "abc\ndef", cursor at 'd' (index 4, start of line 2)
+        const r = deleteToLineStart('abc\ndef', 4)
+        expect(r.value).toBe('abcdef')
+        expect(r.cursor).toBe(3) // was at \n position
+    })
+    it('does nothing at position 0', () => {
+        const r = deleteToLineStart('abc', 0)
+        expect(r.value).toBe('abc')
+        expect(r.cursor).toBe(0)
     })
 })

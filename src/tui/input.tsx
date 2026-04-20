@@ -15,25 +15,24 @@ import {
     insertAtCursor,
     moveCursorLeft,
     moveCursorRight,
+    moveCursorUp,
+    moveCursorDown,
+    insertNewline,
+    deleteToLineStart,
     backspaceAtCursor,
 } from './composer_input.js'
+import { Spinner } from './spinner.js'
+import type { ImageAttachment } from './image-attach.js'
+import { parseImageCommand } from './image-attach.js'
 
-// ─── Slash Commands ──────────────────────────────────────────────────────
-
-const SLASH_COMMANDS = [
-    { name: '/compact', desc: 'Compact context history' },
-    { name: '/model', desc: 'Show current model info' },
-    { name: '/approve', desc: 'Change approval policy' },
-    { name: '/retry', desc: 'Retry last message' },
-    { name: '/clear', desc: 'Clear conversation' },
-    { name: '/exit', desc: 'Exit cclin' },
-] as const
+// ─── Slash Commands (从中央注册表导入) ────────────────────────────────────
+import { COMPLETION_CANDIDATES } from './commands.js'
 
 // ─── Props ───────────────────────────────────────────────────────────────
 
 export type InputAreaProps = {
     busy: boolean
-    onSubmit: (value: string) => void
+    onSubmit: (value: string, attachments?: ImageAttachment[]) => void
     approvalPending?: boolean
     approvalText?: string
     onApproval?: (approved: boolean) => void
@@ -56,6 +55,8 @@ export function InputArea({
     const [editor, setEditor] = useState({ value: '', cursor: 0 })
     const editorRef = useRef(editor)
     const [slashIdx, setSlashIdx] = useState(0)
+    const [pendingAttachments, setPendingAttachments] = useState<ImageAttachment[]>([])
+    const [attachError, setAttachError] = useState<string | null>(null)
 
     const commitEditor = useCallback((next: { value: string; cursor: number }) => {
         editorRef.current = next
@@ -72,7 +73,7 @@ export function InputArea({
     // Compute matching slash command suggestions
     const slashSuggestions = useMemo(() => {
         if (!editor.value.startsWith('/') || editor.value.includes(' ')) return []
-        return SLASH_COMMANDS.filter(c => c.name.startsWith(editor.value))
+        return COMPLETION_CANDIDATES.filter(c => c.slash.startsWith(editor.value))
     }, [editor.value])
 
     const { stdout } = useStdout()
@@ -88,11 +89,29 @@ export function InputArea({
 
         if (busy) return
 
+        const termW = stdout?.columns ?? process.stdout?.columns ?? 80
+        const contentW = Math.max(1, termW - 3)
+
+        // ESC: clear input (if non-empty)
+        if (key.escape) {
+            if (editorRef.current.value) {
+                commitEditor({ value: '', cursor: 0 })
+            }
+            return
+        }
+
+        // Alt+Enter: insert newline (also Ctrl+J as fallback)
+        if ((key.meta && key.return) || (key.ctrl && input === '\n')) {
+            const current = editorRef.current
+            commitEditor(insertNewline(current.value, current.cursor))
+            return
+        }
+
         // Tab: accept slash suggestion
         const getActiveSuggestions = () => {
             const val = editorRef.current.value
             if (!val.startsWith('/') || val.includes(' ')) return []
-            return SLASH_COMMANDS.filter(c => c.name.startsWith(val))
+            return COMPLETION_CANDIDATES.filter(c => c.slash.startsWith(val))
         }
         
         const activeSuggestions = getActiveSuggestions()
@@ -100,41 +119,72 @@ export function InputArea({
         if (key.tab && activeSuggestions.length > 0) {
             const selected = activeSuggestions[slashIdxRef.current]
             if (selected) {
-                commitEditor({ value: selected.name, cursor: selected.name.length })
+                commitEditor({ value: selected.slash, cursor: selected.slash.length })
                 commitSlashIdx(0)
             }
             return
         }
 
-        // Arrow up/down in slash suggestion mode
-        if (activeSuggestions.length > 0) {
-            if (key.upArrow) {
+        // Arrow up/down: slash suggestion mode or multiline cursor
+        if (key.upArrow) {
+            if (activeSuggestions.length > 0) {
                 commitSlashIdx(i => Math.max(0, i - 1))
-                return
+            } else {
+                const current = editorRef.current
+                commitEditor({ value: current.value, cursor: moveCursorUp(current.value, current.cursor, contentW) })
             }
-            if (key.downArrow) {
+            return
+        }
+        if (key.downArrow) {
+            if (activeSuggestions.length > 0) {
                 commitSlashIdx(i => Math.min(activeSuggestions.length - 1, i + 1))
-                return
+            } else {
+                const current = editorRef.current
+                commitEditor({ value: current.value, cursor: moveCursorDown(current.value, current.cursor, contentW) })
             }
+            return
         }
 
         // Enter 提交
         if (key.return) {
+            const currentVal = editorRef.current.value.trim()
+
+            // /image 命令：异步解析附件，不提交消息
+            if (currentVal.startsWith('/image ') || currentVal === '/image') {
+                commitEditor({ value: '', cursor: 0 })
+                setAttachError(null)
+                parseImageCommand(currentVal).then(result => {
+                    if (result.ok) {
+                        setPendingAttachments(prev => [...prev, result.attachment])
+                        // 若有剩余文本，填回输入框
+                        if (result.remainingText) {
+                            commitEditor({ value: result.remainingText, cursor: result.remainingText.length })
+                        }
+                    } else {
+                        setAttachError(result.error)
+                    }
+                })
+                return
+            }
+
             // If slash suggestions are open, Enter should select and submit the highlighted command
             if (activeSuggestions.length > 0) {
                 const selected = activeSuggestions[slashIdxRef.current]
                 if (selected) {
                     commitEditor({ value: '', cursor: 0 })
-                    onSubmit(selected.name)
+                    onSubmit(selected.slash)
                     commitSlashIdx(0)
                     return
                 }
             }
 
-            const trimmed = editorRef.current.value.trim()
-            if (!trimmed) return
+            const trimmed = currentVal
+            if (!trimmed && pendingAttachments.length === 0) return
             commitEditor({ value: '', cursor: 0 })
-            onSubmit(trimmed)
+            const atts = pendingAttachments
+            setPendingAttachments([])
+            setAttachError(null)
+            onSubmit(trimmed, atts.length > 0 ? atts : undefined)
             return
         }
 
@@ -170,10 +220,10 @@ export function InputArea({
             commitEditor({ value: current.value, cursor: current.value.length })
             return
         }
-        // Ctrl+U 删除到行首
+        // Ctrl+U 删除到当前行首（多行感知）
         if (key.ctrl && input === 'u') {
             const current = editorRef.current
-            commitEditor({ value: current.value.slice(current.cursor), cursor: 0 })
+            commitEditor(deleteToLineStart(current.value, current.cursor))
             return
         }
 
@@ -219,7 +269,7 @@ export function InputArea({
         return (
             <Box flexDirection="column">
                 <Box>
-                    <Text color="gray">❯ </Text>
+                    <Text color="cyan"><Spinner name="dna" color="cyan" /> </Text>
                     <Text color="gray">{editor.value}</Text>
                 </Box>
                 <Footer busy contextPercent={contextPercent} activityTick={activityTick} />
@@ -256,18 +306,37 @@ export function InputArea({
             {slashSuggestions.length > 0 ? (
                 <Box flexDirection="column" marginLeft={2}>
                     {slashSuggestions.map((cmd, i) => (
-                        <Box key={cmd.name}>
+                        <Box key={cmd.slash}>
                             <Text
                                 color={i === slashIdx ? 'cyan' : 'gray'}
                                 bold={i === slashIdx}
                             >
                                 {i === slashIdx ? '▸ ' : '  '}
-                                {cmd.name}
+                                {cmd.slash}
                             </Text>
                             <Text color="gray"> — {cmd.desc}</Text>
                         </Box>
                     ))}
                     <Text color="gray" italic>Tab to complete • ↑↓ to select</Text>
+                </Box>
+            ) : null}
+            {/* 待附加图片列表 */}
+            {pendingAttachments.length > 0 ? (
+                <Box flexDirection="column" marginLeft={2} marginTop={0}>
+                    {pendingAttachments.map((att, i) => (
+                        <Box key={att.path}>
+                            <Text color="cyan">📎 </Text>
+                            <Text color="cyan" bold>[Image #{i + 1}]</Text>
+                            <Text color="gray"> {att.filename} ({att.sizeKB} KB)</Text>
+                        </Box>
+                    ))}
+                    <Text color="gray" italic>Image{pendingAttachments.length > 1 ? 's' : ''} will be attached • Enter to send</Text>
+                </Box>
+            ) : null}
+            {/* 附件错误提示 */}
+            {attachError ? (
+                <Box marginLeft={2}>
+                    <Text color="red">⚠ {attachError}</Text>
                 </Box>
             ) : null}
             <Footer busy={false} contextPercent={contextPercent} activityTick={activityTick} />
@@ -303,7 +372,7 @@ function Footer({
 
     const helpText = approvalPending
         ? 'y allow • n deny'
-        : 'Enter send • /compact • exit'
+        : 'Enter send • Alt+Enter newline • ESC clear • /compact'
 
     const timerColor = elapsed >= 30 ? 'red' : elapsed >= 15 ? 'yellow' : 'gray'
     const timerSuffix = elapsed >= 30 ? ' ⚠ stalled?' : ''

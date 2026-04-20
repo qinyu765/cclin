@@ -10,6 +10,7 @@ import { Box, Static, Text, useStdout } from 'ink'
 import { wrapTextCJK } from './cjk_text.js'
 import { MarkdownRenderer } from './chatwidget/markdown_renderer.js'
 import { TOOL_STATUS } from './types.js'
+import { Spinner } from './spinner.js'
 import type {
     SystemMessage,
     StepView,
@@ -107,13 +108,21 @@ const StepCell = memo(function StepCell({
         <Box flexDirection="column">
             {step.thinking ? (
                 <Box flexDirection="row">
-                    <Box width={2}><Text color="gray">● </Text></Box>
+                    <Box width={2}>
+                        {!isCompleted && !step.action ? <Spinner name="braille" color="gray" /> : <Text color="gray">● </Text>}
+                    </Box>
                     <Box flexGrow={1}><Text color="gray">{truncate(step.thinking, 120)}</Text></Box>
                 </Box>
             ) : null}
             {step.action ? (
                 <Box flexDirection="row">
-                    <Box width={2}><Text color={statusColor(step.toolStatus)}>● </Text></Box>
+                    <Box width={2}>
+                        {!isCompleted && step.toolStatus === TOOL_STATUS.EXECUTING ? (
+                            <Spinner name="orbit" color="yellow" />
+                        ) : (
+                            <Text color={statusColor(step.toolStatus)}>● </Text>
+                        )}
+                    </Box>
                     <Box flexGrow={1}>
                         <Text>
                             <Text color="gray">Used </Text>
@@ -140,6 +149,13 @@ const TurnCell = memo(function TurnCell({ turn }: { turn: TurnView }) {
                 <Box width={3}><Text bold color="blue">{`>> `}</Text></Box>
                 <Box flexGrow={1}><Text bold>{turn.userInput}</Text></Box>
             </Box>
+            {turn.imageAttachments && turn.imageAttachments.length > 0 ? (
+                <Box marginLeft={3}>
+                    {turn.imageAttachments.map((filename, i) => (
+                        <Text key={i} color="cyan">📎 {filename} </Text>
+                    ))}
+                </Box>
+            ) : null}
             {turn.steps.map((step) => (
                 <StepCell
                     key={`${turn.index}-${step.index}`}

@@ -41,6 +41,8 @@ export type StepView = {
 export type TurnView = {
     index: number
     userInput: string
+    /** 本轮附加的图片文件名列表（用于 UI 显示）。 */
+    imageAttachments?: string[]
     steps: StepView[]
     status?: 'running' | 'ok' | 'error' | 'cancelled'
     errorMessage?: string
