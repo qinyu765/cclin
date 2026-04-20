@@ -30,6 +30,13 @@ export const listDirectoryTool: ToolDefinition = {
 
         const resolved = path.resolve(dirPath)
 
+        // Common directories that pollute context when listed
+        const IGNORED_DIRS = new Set([
+            'node_modules', '.git', '.next', '.nuxt', 'dist', 'build',
+            '.cache', '.turbo', '.output', '__pycache__', '.pytest_cache',
+            'coverage', '.nyc_output', '.parcel-cache', '.svelte-kit',
+        ])
+
         try {
             const entries = await fs.readdir(resolved, { withFileTypes: true })
             if (entries.length === 0) {
@@ -37,7 +44,15 @@ export const listDirectoryTool: ToolDefinition = {
             }
 
             const lines: string[] = []
+            let hiddenCount = 0
+
             for (const entry of entries) {
+                // Skip noisy directories
+                if (entry.isDirectory() && IGNORED_DIRS.has(entry.name)) {
+                    hiddenCount++
+                    continue
+                }
+
                 const fullPath = path.join(resolved, entry.name)
                 if (entry.isDirectory()) {
                     lines.push(`  [DIR]  ${entry.name}/`)
@@ -51,7 +66,12 @@ export const listDirectoryTool: ToolDefinition = {
                 }
             }
 
-            return { output: `${resolved}/ (${entries.length} entries)\n${lines.join('\n')}` }
+            let output = `${resolved}/ (${entries.length} entries)\n${lines.join('\n')}`
+            if (hiddenCount > 0) {
+                output += `\n\n  (${hiddenCount} directories hidden: ${[...IGNORED_DIRS].filter(d => entries.some(e => e.name === d)).join(', ')})`
+            }
+
+            return { output }
         } catch (err) {
             const code = (err as NodeJS.ErrnoException).code
             const msg = code === 'ENOENT'

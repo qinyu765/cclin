@@ -27,6 +27,57 @@ import type { ApprovalManager } from './approval.js'
 /** 工具输出最大字符数（超过则截断）。 */
 const MAX_OUTPUT_CHARS = 50_000
 
+// ─── 并行安全分类 ──────────────────────────────────────────────────────────────
+
+/**
+ * 只读 / 幂等工具：永远可以并行。
+ * 条件：不修改任何外部状态（文件、进程、网络写入除外）。
+ */
+const PARALLEL_SAFE_TOOLS = new Set([
+    'read_file',
+    'list_directory',
+    'search_files',
+    'get_memory',
+    'bash',  // 工具本身安全；破坏性命令由 safety.ts 拦截
+])
+
+/**
+ * 永远不并行的工具：有交互副作用、需要用户响应，严格串行。
+ */
+const NEVER_PARALLEL_TOOLS = new Set([
+    'spawn_agent',   // 子 Agent 启动，占用大量资源
+    'send_input',    // 子 Agent 交互，需要序求保证
+    'close_agent',   // 子 Agent 生命周期操作
+    'wait_agent',    // 等待子 Agent，串行语义
+])
+
+/**
+ * 判断一批工具调用是否可以并行执行。
+ *
+ * 规则（按优先级优先判断）：
+ *   1. 只有 1 个调用 → 不并行（无意义开 Promise.all）
+ *   2. 含 NEVER_PARALLEL_TOOLS → 全部串行
+ *   3. 含 mutating 工具（isMutating=true）且 batch > 1 → 串行（避免并发写冲突）
+ *   4. 全部在 PARALLEL_SAFE_TOOLS 里 → 并行
+ *   5. 其他 → 串行（安全默认）
+ */
+function shouldParallelize(actions: ToolAction[], registry: ToolQueryable): boolean {
+    if (actions.length <= 1) return false
+
+    const names = actions.map(a => a.name)
+
+    if (names.some(n => NEVER_PARALLEL_TOOLS.has(n))) return false
+
+    for (const name of names) {
+        const tool = registry.get(name)
+        if (tool?.isMutating) return false
+    }
+
+    if (names.every(n => PARALLEL_SAFE_TOOLS.has(n))) return true
+
+    return false
+}
+
 // ─── 辅助函数 ─────────────────────────────────────────────────────────────────
 
 /** 截断过长的工具输出。 */
@@ -190,19 +241,41 @@ export class ToolOrchestrator {
     }
 
     /**
-     * 批量执行工具调用（顺序执行）。
+     * 批量执行工具调用（智能并行 / 串行自动切换）。
+     *
+     * 调用路径：
+     *   - shouldParallelize() 返回 true → Promise.all 并发执行所有 action
+     *   - 否则 → for...of 逐个执行（遇到 approval_denied 时提前中断）
+     *
+     * 并行时：审批拦截仍然工作。如果允许并行的工具需要审批，
+     * 审批回调仍会被调用，但多个并行审批请求会同时弹出。
      */
     async executeActions(
         actions: ToolAction[],
         hooks?: ApprovalHooks,
     ): Promise<ToolExecutionResult> {
+        if (shouldParallelize(actions, this.registry)) {
+            // ─── 并行执行 ────────────────────────────────────────────────
+            const results = await Promise.all(
+                actions.map(action => this.executeAction(action, hooks))
+            )
+
+            const hasRejection = results.some(r => r.status === 'approval_denied')
+            const combinedObservation = results
+                .map(r => r.observation)
+                .join('\n---\n')
+
+            return { results, combinedObservation, hasRejection }
+        }
+
+        // ─── 串行执行 ────────────────────────────────────────────────────
         const results: ToolActionResult[] = []
 
         for (const action of actions) {
             const result = await this.executeAction(action, hooks)
             results.push(result)
 
-            // 如果被拒绝，停止后续执行   
+            // 如果被拒绝，停止后续执行
             if (result.status === 'approval_denied') break
         }
 

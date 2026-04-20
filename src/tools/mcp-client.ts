@@ -4,20 +4,30 @@
  * Phase 9：通过 @modelcontextprotocol/sdk 与外部 MCP Server 通信。
  *
  * 职责：
- *   1. 通过 stdio 传输建立与 MCP Server 的连接
+ *   1. 建立与 MCP Server 的连接（stdio / HTTP / SSE）
  *   2. 发现 Server 提供的工具列表
  *   3. 代理调用远端工具
  *   4. 管理连接生命周期（连接池 + 清理）
  *
- * 设计简化：
- *   - 仅支持 stdio 传输（最常见场景）
- *   - 不引入 HTTP/OAuth 复杂度
- *   - 连接池避免重复连接
+ * 传输方式：
+ *   - stdio：本地子进程（command + args）
+ *   - StreamableHTTP：推荐的远程 HTTP 协议（优先尝试）
+ *   - SSE：旧版远程协议（作为 HTTP 的 fallback）
+ *
+ * 认证支持：
+ *   - Bearer Token（静态 token）
+ *   - Client Credentials（OAuth 2.0 客户端凭据流）
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import type { MCPServerConfig } from '../types.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
+import type {
+    MCPServerConfig,
+    MCPStdioConfig,
+    MCPRemoteConfig,
+} from '../types.js'
 
 // ─── 连接信息 ──────────────────────────────────────────────────────────────
 
@@ -27,8 +37,8 @@ type McpConnection = {
     name: string
     /** MCP SDK Client 实例。 */
     client: Client
-    /** stdio 传输层实例。 */
-    transport: StdioClientTransport
+    /** 传输层实例（stdio / HTTP / SSE）。 */
+    transport: StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
 }
 
 /** MCP Server 发现到的原始工具信息。 */
@@ -39,6 +49,18 @@ export type McpDiscoveredTool = {
     description: string
     /** 输入参数 JSON Schema。 */
     inputSchema: Record<string, unknown>
+}
+
+// ─── 类型守卫 ──────────────────────────────────────────────────────────────
+
+/** 判断是否为 stdio 配置（有 command 字段）。 */
+function isStdioConfig(c: MCPServerConfig): c is MCPStdioConfig {
+    return 'command' in c
+}
+
+/** 判断是否为远程配置（有 url 字段）。 */
+function isRemoteConfig(c: MCPServerConfig): c is MCPRemoteConfig {
+    return 'url' in c
 }
 
 // ─── 辅助函数 ──────────────────────────────────────────────────────────────
@@ -60,12 +82,101 @@ function mergeProcessEnv(
     return Object.fromEntries(entries)
 }
 
+/**
+ * Build auth headers from config.
+ *
+ * Converts auth config to an Authorization header value.
+ * Injected via requestInit.headers to avoid OAuthClientProvider complexity.
+ */
+function buildAuthHeaders(
+    auth?: MCPRemoteConfig['auth'],
+): Record<string, string> | undefined {
+    if (!auth) return undefined
+
+    if (auth.type === 'bearer') {
+        return { Authorization: `Bearer ${auth.token}` }
+    }
+
+    if (auth.type === 'client_credentials') {
+        const encoded = Buffer.from(
+            `${auth.clientId}:${auth.clientSecret}`,
+        ).toString('base64')
+        return { Authorization: `Basic ${encoded}` }
+    }
+
+    return undefined
+}
+
+/**
+ * Transport 工厂：根据配置创建对应的传输层实例。
+ *
+ * - stdio：直接创建 StdioClientTransport
+ * - remote（transport='sse'）：强制使用 SSEClientTransport
+ * - remote（transport='http' 或默认）：先尝试 StreamableHTTP，
+ *   connect 失败则 fallback 到 SSE
+ */
+async function createTransportAndConnect(
+    config: MCPServerConfig,
+): Promise<{
+    client: Client
+    transport: StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
+}> {
+    const client = new Client(
+        { name: 'cclin-agent', version: '0.1.0' },
+        { capabilities: {} },
+    )
+
+    // ── stdio 模式 ──
+    if (isStdioConfig(config)) {
+        const transport = new StdioClientTransport({
+            command: config.command,
+            args: config.args,
+            env: mergeProcessEnv(config.env),
+            stderr: 'ignore',
+        })
+        await client.connect(transport)
+        return { client, transport }
+    }
+
+    // ── 远程模式 ──
+    const url = new URL(config.url)
+    const authHeaders = buildAuthHeaders(config.auth)
+    const mergedHeaders = { ...authHeaders, ...config.headers }
+    const hasHeaders = Object.keys(mergedHeaders).length > 0
+    const transportOpts = hasHeaders
+        ? { requestInit: { headers: mergedHeaders } }
+        : {}
+
+    // 强制 SSE
+    if (config.transport === 'sse') {
+        const transport = new SSEClientTransport(url, transportOpts)
+        await client.connect(transport)
+        return { client, transport }
+    }
+
+    // 默认：StreamableHTTP 优先，fallback SSE
+    try {
+        const transport = new StreamableHTTPClientTransport(url, transportOpts)
+        await client.connect(transport)
+        return { client, transport }
+    } catch {
+        // StreamableHTTP 连接失败，fallback 到 SSE
+        const fallbackClient = new Client(
+            { name: 'cclin-agent', version: '0.1.0' },
+            { capabilities: {} },
+        )
+        const transport = new SSEClientTransport(url, transportOpts)
+        await fallbackClient.connect(transport)
+        return { client: fallbackClient, transport }
+    }
+}
+
 // ─── McpClientPool 类 ─────────────────────────────────────────────────────
 
 /**
  * MCP 客户端连接池。
  *
- * 管理多个 MCP Server 的 stdio 连接：
+ * 管理多个 MCP Server 的连接（stdio / HTTP / SSE）：
  *   - 懒连接（首次使用时建立）
  *   - 连接复用（同一 Server 不会重复连接）
  *   - 统一清理
@@ -76,6 +187,7 @@ export class McpClientPool {
     /**
      * 连接到指定 MCP Server。
      *
+     * 根据配置自动选择 stdio / HTTP / SSE 传输方式。
      * 如果已经连接过，直接返回已有连接。
      */
     async connect(
@@ -86,22 +198,9 @@ export class McpClientPool {
         const existing = this.connections.get(name)
         if (existing) return existing
 
-        // 创建 MCP Client
-        const client = new Client(
-            { name: 'cclin-agent', version: '0.1.0' },
-            { capabilities: {} },
-        )
-
-        // 创建 stdio 传输
-        const transport = new StdioClientTransport({
-            command: config.command,
-            args: config.args,
-            env: mergeProcessEnv(config.env),
-            stderr: 'ignore',
-        })
-
-        // 建立连接
-        await client.connect(transport)
+        // 通过工厂创建 transport 并连接
+        const { client, transport } =
+            await createTransportAndConnect(config)
 
         const connection: McpConnection = {
             name,

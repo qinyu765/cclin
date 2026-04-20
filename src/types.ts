@@ -10,6 +10,23 @@
 /** 对话角色。 */
 export type Role = 'system' | 'user' | 'assistant' | 'tool'
 
+// ─── 多模态内容类型（OpenAI Vision API 格式）────────────────────────────────
+
+/** 文本内容块（多模态）。 */
+export type TextContentPart = { type: 'text'; text: string }
+
+/** 图片内容块（多模态，base64 data URL 或远程 URL）。 */
+export type ImageContentPart = {
+    type: 'image_url'
+    image_url: { url: string; detail?: 'low' | 'high' | 'auto' }
+}
+
+/** 用户消息支持的多模态内容块联合类型。 */
+export type ContentPart = TextContentPart | ImageContentPart
+
+/** 用户消息的 content 类型：纯文本或多模态内容块数组。 */
+export type UserContent = string | ContentPart[]
+
 /** 助手发出的结构化工具调用（OpenAI tool_calls 格式）。 */
 export type AssistantToolCall = {
     id: string
@@ -34,7 +51,7 @@ export type ChatMessage =
       }
     | {
           role: 'user'
-          content: string
+          content: UserContent
       }
     | {
           role: 'assistant'
@@ -437,8 +454,13 @@ export type AgentMiddleware = AgentHooks & {
 /** 工具来源标识。 */
 export type ToolSource = 'native' | 'mcp'
 
-/** MCP Server 配置（stdio 传输）。 */
-export type MCPServerConfig = {
+/** MCP Server 认证配置。 */
+export type MCPAuthConfig =
+    | { type: 'bearer'; token: string }
+    | { type: 'client_credentials'; clientId: string; clientSecret: string }
+
+/** stdio 模式配置（本地子进程）。 */
+export type MCPStdioConfig = {
     /** 启动命令（如 'node', 'npx'）。 */
     command: string
     /** 命令参数列表。 */
@@ -446,6 +468,21 @@ export type MCPServerConfig = {
     /** 环境变量覆盖（会与 process.env 合并）。 */
     env?: Record<string, string>
 }
+
+/** 远程 HTTP/SSE 模式配置。 */
+export type MCPRemoteConfig = {
+    /** 远程 Server URL（如 'http://example.com/mcp'）。 */
+    url: string
+    /** 传输方式：'http'（默认，自动 fallback SSE）或 'sse'（强制）。 */
+    transport?: 'http' | 'sse'
+    /** 自定义请求头。 */
+    headers?: Record<string, string>
+    /** 认证配置。 */
+    auth?: MCPAuthConfig
+}
+
+/** MCP Server 配置（支持 stdio 和远程两种模式）。 */
+export type MCPServerConfig = MCPStdioConfig | MCPRemoteConfig
 
 /** MCP 配置文件的完整格式。 */
 export type MCPConfigFile = {
@@ -511,4 +548,65 @@ export type HistorySink = {
     flush(): Promise<void>
     /** 关闭并释放资源。 */
     close(): Promise<void>
+}
+
+// ─── Phase 10: Subagent 类型 ───────────────────────────────────────────────────
+
+/**
+ * 子 Agent 的运行状态（方案二异步模式）。
+ *
+ * - `idle`：已创建但尚未收到任何输入
+ * - `running`：当前 Turn 正在执行中
+ * - `idle_after_turn`：上一 Turn 执行完毕，等待下一轮输入
+ * - `closed`：已被 close_agent 关闭，不可再接收输入
+ */
+export type SubAgentStatus = 'idle' | 'running' | 'idle_after_turn' | 'closed'
+
+/**
+ * `spawn_agent` 工具的输入参数。
+ *
+ * 方案一（阻塞式）和方案二（异步式）共用同一套输入类型。
+ */
+export type SpawnAgentInput = {
+    /** 子 Agent 要完成的具体任务描述。 */
+    task: string
+    /** 传递给子 Agent 的额外上下文（可选）。 */
+    context?: string
+    /** 子 Agent 单次 Turn 的最大步骤数（默认 10）。 */
+    max_steps?: number
+}
+
+/**
+ * 方案二：`send_input` 工具的输入参数。
+ */
+export type SendInputArgs = {
+    /** 目标子 Agent 的 ID（由 spawn_agent 返回）。 */
+    agent_id: string
+    /** 发送给子 Agent 的消息文本。 */
+    message: string
+}
+
+/**
+ * 方案二：`wait` / `close_agent` 工具的输入参数。
+ */
+export type AgentIdArgs = {
+    /** 目标子 Agent 的 ID。 */
+    agent_id: string
+}
+
+/**
+ * 方案二：子 Agent 句柄，存储在 SubAgentManager 的 Map 中。
+ *
+ * 每个句柄持有一个独立的 Session 实例和一个 Promise 队列，
+ * 用于驱动异步的 Turn 执行。
+ */
+export type SubAgentHandle = {
+    /** 子 Agent 唯一 ID。 */
+    id: string
+    /** 当前运行状态。 */
+    status: SubAgentStatus
+    /** 上一次 Turn 完成后的结果文本（缓存用）。 */
+    lastResult?: string
+    /** 创建时间（ISO 字符串）。 */
+    createdAt: string
 }

@@ -7,14 +7,20 @@
  *   1. 项目目录 ./mcp_config.json
  *   2. 用户目录 ~/.cclin/mcp_config.json
  *
- * 配置格式：
+ * 配置格式（支持 stdio 和远程两种模式）：
  * ```json
  * {
  *   "mcpServers": {
- *     "serverName": {
+ *     "local": {
  *       "command": "node",
- *       "args": ["path/to/server.js"],
+ *       "args": ["server.js"],
  *       "env": { "KEY": "value" }
+ *     },
+ *     "remote": {
+ *       "url": "http://example.com/mcp",
+ *       "transport": "http",
+ *       "headers": { "X-Custom": "value" },
+ *       "auth": { "type": "bearer", "token": "sk-xxx" }
  *     }
  *   }
  * }

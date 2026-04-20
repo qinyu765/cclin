@@ -35,20 +35,29 @@ export const readFileTool: ToolDefinition = {
         try {
             const raw = await fs.readFile(resolved, 'utf-8')
             let lines = raw.split('\n')
+            const totalLines = lines.length
 
             const offset = Math.max(0, Number(input.offset) || 0)
             const limit = Number(input.limit) || 0
 
-            if (offset > 0 || limit > 0) {
-                const end = limit > 0 ? offset + limit : undefined
-                lines = lines.slice(offset, end)
-            }
+            // Apply default line cap to prevent context overflow
+            const DEFAULT_MAX_LINES = 2000
+            const effectiveLimit = limit > 0 ? limit : DEFAULT_MAX_LINES
+
+            const end = offset + effectiveLimit
+            const wasTruncated = limit === 0 && totalLines > end
+            lines = lines.slice(offset, end)
 
             const numbered = lines.map((line, i) =>
                 `${offset + i + 1}: ${line}`,
             ).join('\n')
 
-            return { output: `File: ${resolved}\n${numbered}` }
+            let output = `File: ${resolved} (${totalLines} lines total)\n${numbered}`
+            if (wasTruncated) {
+                output += `\n\n⚠️ Output truncated at ${DEFAULT_MAX_LINES} lines. Use offset/limit to read further.`
+            }
+
+            return { output }
         } catch (err) {
             const code = (err as NodeJS.ErrnoException).code
             const msg = code === 'ENOENT'
