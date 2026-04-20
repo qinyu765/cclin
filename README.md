@@ -7,16 +7,28 @@
 ## ✨ 特性
 
 - **ReAct 循环** — 手写 Think → Act → Observe 循环，脱离 SDK 自动编排
-- **8 个内置工具** — `read_file` / `write_file` / `edit_file` / `bash` / `list_directory` / `search_files` / `update_plan` / `get_memory`
+- **11 个内置工具** — `read_file` / `write_file` / `edit_file` / `bash` / `list_directory` / `search_files` / `update_plan` / `get_memory` / `remember_note` / `search_history` / `create_skill`
 - **MCP 集成** — 通过配置文件接入任意 MCP Server 的外部工具
 - **Ink TUI** — 基于 React + Ink 的终端界面，实时展示工具调用和流式输出
+- **多行编辑** — Alt+Enter 换行、↑↓ 多行导航、ESC 清空输入
 - **审批系统** — 危险操作自动暂停等待确认（always / once / session 三级策略）
-- **上下文压缩** — 长对话自动压缩，不丢失关键上下文
+- **TOML 配置** — 用户级 `~/.cclin/config.toml`，首次运行自动生成模板
+- **多 Provider 抽象** — 统一 LLMProvider 接口，支持 OpenAI/DeepSeek/NewAPI 等兼容 API
+- **上下文压缩** — 长对话自动压缩，保留近期消息不丢失关键上下文
 - **Skills 系统** — 发现并加载 `SKILL.md` 技能文件，扩展 Agent 能力
 - **Model Profile** — 不同模型的参数差异化配置
 - **会话持久化** — JSONL 日志记录，支持历史回放
+- **多模态输入** — `/image <path>` 附加图片，与支持 Vision 的模型（gpt-4o 等）对话
+- **Subagent 系统** — 父 Agent 可派遣子 Agent 完成子任务：阻塞式 `spawn_agent` 和异步式 `send_input` / `wait` / `close_agent` 两套方案
+- **学习闭环** — `remember_note` 跨会话笔记、`search_history` 历史检索、`create_skill` Skill 自我建立，无需模型微调的持续进化能力
 
-## 🚀 快速开始
+## �️ 技术栈
+
+- **核心交互**：[React](https://react.dev/) + [Ink](https://github.com/vadimdemedes/ink) 构建终端 TUI
+- **终端美化**：[unicode-animations](https://github.com/hcfy/unicode-animations) 实现平滑的终端动画
+- **工具扩展**：[@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) (MCP)
+
+## �🚀 快速开始
 
 ```bash
 # 克隆项目
@@ -25,21 +37,27 @@ git clone <repo-url> && cd cclin
 # 安装依赖
 pnpm install
 
-# 配置 API Key
-cp .env.example .env
-# 编辑 .env，填入你的 OPENAI_API_KEY
+# 配置 API Key（首次运行会自动生成 ~/.cclin/config.toml）
+# 编辑 config.toml 填入你的 API Key，或设置环境变量 OPENAI_API_KEY
 
 # 启动
 pnpm run dev
 ```
 
-## ⌨️ 内置命令
+## ⌨️ 快捷键
 
-| 命令 | 说明 |
+| 快捷键 / 命令 | 说明 |
 |------|------|
+| `Enter` | 提交输入 |
+| `Alt+Enter` / `Ctrl+J` | 插入换行（多行输入） |
+| `ESC` | 清空当前输入 |
+| `↑↓` | 多行光标移动 |
+| `Ctrl+U` | 删除到当前行首 |
+| `Ctrl+A` / `Ctrl+E` | 跳转到行首 / 行尾 |
 | `/compact` | 手动压缩上下文 |
-| `/retry` | 重新发送上一次输入 |
-| `/approve <mode>` | 切换审批策略（`always` / `once` / `session`） |
+| `/retry` | 重新发送上次输入 |
+| `/approve <mode>` | 切换审批策略 |
+| `/image <path> [描述]` | 附加图片文件（支持 png/jpg/webp/gif，≤20 MB） |
 | `Ctrl+C` | 退出 |
 
 ## 🏗️ 架构
@@ -48,9 +66,11 @@ pnpm run dev
 cclin/
 ├── src/
 │   ├── index.ts              # 入口 + TUI 桥接
-│   ├── types.ts              # 共享类型定义
+│   ├── types.ts              # 共享类型定义（含 ContentPart 多模态类型）
+│   ├── config/               # TOML 配置加载器
 │   ├── llm/
-│   │   └── client.ts         # OpenAI SDK 封装（流式/非流式）
+│   │   ├── provider.ts       # LLMProvider 接口 + Registry
+│   │   └── client.ts         # OpenAI Provider（流式/非流式＋ Vision 多模态）
 │   ├── runtime/
 │   │   ├── session.ts        # 会话管理
 │   │   ├── react-loop.ts     # ReAct 循环引擎
@@ -64,25 +84,41 @@ cclin/
 │   │   ├── router.ts         # 工具路由（Native + MCP）
 │   │   ├── orchestrator.ts   # 工具编排器
 │   │   ├── approval.ts       # 审批管理器
+│   │   ├── spawn-agent.ts    # 阻塞式 Subagent
+│   │   ├── subagent-manager.ts  # 异步 Subagent 生命周期
+│   │   ├── subagent-tools.ts # 异步 Subagent 工具套件
+│   │   ├── remember-note.ts  # 跨会话笔记写入
+│   │   ├── search-history.ts # 历史 JSONL 检索
+│   │   ├── create-skill.ts   # Skill 自我建立
 │   │   └── *.ts              # 各工具实现
-│   ├── tui/                  # Ink TUI 组件
+│   ├── tui/
+│   │   ├── image-attach.ts   # 图片附件处理（解析/验证/base64 编码）
+│   │   └── *.tsx             # Ink TUI 组件
 │   └── utils/                # 工具函数
-├── .env.example              # 配置模板
 ├── AGENTS.md                 # 项目级 Agent 指令
 ├── PLAN.md                   # 开发路线图
-└── docs/                     # 学习笔记（Phase 2-10）
+└── docs/                     # 学习笔记
 ```
 
 ## ⚙️ 配置
 
-### 环境变量（`.env`）
+### 配置文件（`~/.cclin/config.toml`）
 
-| 变量 | 必填 | 默认值 | 说明 |
-|------|:----:|--------|------|
-| `OPENAI_API_KEY` | ✅ | — | OpenAI 兼容 API Key |
-| `OPENAI_BASE_URL` | — | `https://api.openai.com/v1` | API 地址（支持 DeepSeek 等） |
-| `MODEL_NAME` | — | `gpt-4o-mini` | 模型名称 |
-| `CCLIN_HOME` | — | `~/.cclin` | 用户级配置目录 |
+首次运行时自动生成带注释的模板文件。主要配置项：
+
+```toml
+[llm]
+api_key = "sk-xxx"              # OpenAI 兼容 API Key
+base_url = "https://api.openai.com/v1"  # API 地址
+model = "gpt-4o-mini"           # 模型名称
+provider = "openai"             # Provider 类型
+
+[approval]
+policy = "once"                 # always / once / session
+```
+
+环境变量 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`MODEL_NAME` 可覆盖 TOML 配置。
+`CCLIN_HOME` 可重定向配置目录（默认 `~/.cclin`）。
 
 ### 扩展文件
 
@@ -90,6 +126,32 @@ cclin/
 - **`~/.cclin/SOUL.md`** — 用户人格偏好（语言、风格等）
 - **`.agents/skills/*/SKILL.md`** — 技能文件
 - **`mcp_config.json`** — MCP Server 配置
+
+## 🖼️ 多模态输入
+
+在输入框中先键入 `/image` 命令附加图片，再键入文字描述回车发送：
+
+```
+/image ./screenshot.png 这张截图里面有什么 bug？
+```
+
+- 支持格式：`png` / `jpg` / `jpeg` / `webp` / `gif`
+- 单次最大 **20 MB**，超出会在提交前提示错误
+- TUI 中显示待附加标记 `📎 [Image #1] filename.png`，回车后将图片与文字一起发送给 LLM
+- **模型要求**：需配置支持 Vision 的模型（如 `gpt-4o`），否则 API 会返回错误
+
+## 🤖 Subagent 系统
+
+cclin 支持「父 Agent 派遣子 Agent」模式，适合并行子任务、完全隔离的工作界面等场景。
+
+**阻塞式（spawn_agent）**：父 Agent 调用后等待子 Agent 完成并返回结果。
+
+```
+请使用 spawn_agent 完成以下任务并返回结果：
+给 src/utils/ 目录下所有文件生成单元测试
+```
+
+**异步式（send_input / wait / close_agent）**：父 Agent 可持续其他工作，笺时 `wait` 收取结果。子 Agent 全部共享主 Agent 的工具集和审批策略（子 Agent 使用 `session` 级，即全量自动批准）。
 
 ## 📦 安装
 

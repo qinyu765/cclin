@@ -13,8 +13,8 @@
 ### Phase 1: 项目基础 & LLM 集成 ✅
 **目标**：能成功调用 LLM 并打印响应。
 
-- [x] 初始化项目（package.json / tsconfig.json / .env）
-- [x] 安装核心依赖：`openai`, `typescript`, `tsx`, `dotenv`
+- [x] 初始化项目（package.json / tsconfig.json）
+- [x] 安装核心依赖：`openai`, `typescript`, `tsx`, `smol-toml`
 - [x] 定义基础类型：`ChatMessage`, `LLMResponse`, `TokenUsage`
 - [x] 封装 `callLLM()` 函数（支持依赖注入，方便后续替换/测试）
 - [x] 编写简单入口验证 LLM 调用
@@ -142,7 +142,7 @@
 ### Phase 10: 高级功能（长期）
 **目标**：对齐 memo-code 完整能力。
 
-- [ ] 多 Agent 协作（`spawn_agent` / `send_input` / `wait` / `close_agent`）
+- [x] 多 Agent 协作（方案一：`spawn_agent` 阻塞式；方案二：`spawn_agent_async` / `send_input` / `wait_agent` / `close_agent` 异步式）
 - [x] Skills 系统（技能发现 + prompt 注入）
 - [x] `get_memory` 工具
 - [x] `search_files` 工具
@@ -151,6 +151,32 @@
 - [x] Model Profile（不同模型的参数配置）
 
 ---
+
+### Phase 11: 架构整改 ✅
+**目标**：基于代码评审反馈，系统性修复架构与交互缺陷。
+
+- [x] TUI 多行编辑（Alt+Enter 换行、↑↓ 导航、ESC 清空）
+- [x] 配置迁移：dotenv → TOML（`~/.cclin/config.toml`，三层优先级合并）
+- [x] 系统提示词增强（参考 Claude Code 风格重写 prompt.md）
+- [x] 上下文防爆改进（read_file 行数限制、list_directory 噪声过滤、压缩保留近期消息）
+- [x] Provider 抽象层（LLMProvider 接口 + Registry + OpenAIProvider）
+- [ ] 多模态支持（图片粘贴 + 多模态消息格式）
+
+**产出**：配置更安全、提示词更专业、上下文更可控、Provider 可扩展。
+
+
+### Phase 12：学习闭环系统 ✅
+**目标**：Agent 具备跨会话记忆、历史检索、Skill 自我建立能力。
+
+- [x] `remember_note` 工具（写入 `~/.cclin/memories/notes.md`，带日期 + 分类 tag）
+- [x] 扩展 `get_memory("notes")` 支持读取跨会话笔记（不存在时友好提示而非报错）
+- [x] `search_history` 工具（扫描 `~/.cclin/history/*.jsonl`，只匹配 `final` 事件，按时间倒序返回）
+- [x] `create_skill` 工具（写入 `~/.cclin/skills/<name>/SKILL.md`，与 Skills 工具系统完全兼容，下次启动自动注入）
+- [x] 接入 `historySink`：`handleMiddlewareReady` 中创建 `JsonlHistorySink`，会话历史与每日 JSONL 文件真正落地
+- [x] `prompt.md` 补充记忆工具使用时机指导（when to write / search / create skill）
+
+**产出**：Agent 能跨会话记忆用户偏好、回溯历史解法并将解题模式提炼为可复用 Skill，实现无需模型微调的持续进化能力。
+
 
 ## 验证策略
 
@@ -166,7 +192,6 @@
 ```
 cclin/
 ├── .agents/workflows/dev.md    # 开发协作 workflow
-├── .env                        # API Key 配置
 ├── PLAN.md                     # 本文件
 ├── AGENTS.md                   # 项目级 Agent 指令
 ├── package.json
@@ -174,8 +199,13 @@ cclin/
 └── src/
     ├── index.ts                # 入口
     ├── types.ts                # 共享类型
+    ├── config/                 # TOML 配置加载器
+    │   ├── types.ts            # CclinConfig 类型
+    │   ├── loader.ts           # 配置加载逻辑
+    │   └── index.ts            # barrel export
     ├── llm/
-    │   └── client.ts           # OpenAI SDK 封装
+    │   ├── provider.ts         # LLMProvider 接口 + Registry
+    │   └── client.ts           # OpenAI Provider
     ├── runtime/
     │   ├── session.ts          # AgentSession 类
     │   ├── react-loop.ts       # ReAct 循环
@@ -201,3 +231,36 @@ cclin/
         ├── safety.ts           # 安全检查
         └── tokenizer.ts        # Token 计数
 ```
+
+---
+
+## 阶段实现取舍清单 (待完成/可扩展特性)
+
+在先前的开发阶段中，基于"最小可用"与"降低复杂度"原则，对参考实现 (memo-code) 做了一定程度的简化。以下保留各阶段未实现、可作为未来演进的特性清单（提炼自 docs 学习笔记）：
+
+### Phase 3 工具系统
+- **动态输入校验**：目前采用手写基础校验逻辑，未引入 `zod` 进行工具 Input Schema 的复杂验证。
+
+### Phase 4 审批与编排
+- **细粒度风险分级**：当前仅依赖工具的 `isMutating` 进行布尔值判定。未实现独立的工具风险分类器（三级风险 read/write/execute 映射与 auto/dangerous/strict 全局模式管控）。
+- **审批持久化与并发**：暂未支持完整的并发执行 (Promises 并行模式)，以及独立格式化的 MCP Tool Result 截断/兼容。
+
+### Phase 5 Prompt 管理系统
+- **灵活的模板加载**：目前限定在同目录读取 `prompt.md`，不支持多级路径回溯查找以及通过系统环境变量动态覆盖 Prompt 模板基准路径。
+
+### Phase 6 上下文压缩
+- **原生 Token 计算**：受限于免编译诉求选用了 `gpt-tokenizer`，未来可升级为更精确的 OpenAI 官方 `@dqbd/tiktoken`（WASM 原生绑定）。
+- ~~**更精细的留存机制**~~：✅ 已实现 `COMPACTION_TAIL_WINDOW`，压缩时保留最近 N 条消息。
+- **强制截断防护**：压缩后如果依然超出设定的上下文阈值，目前仅触发日志警告，缺少严格的末位截断或保护性阻断执行机制。
+
+### Phase 9 MCP 集成
+- [x] **连接协议扩展**：`McpClientPool` 已支持 stdio / StreamableHTTP / SSE 三种传输方式，含 OAuth 凭据（Bearer Token / Client Credentials）注入，HTTP 模式自动 fallback SSE。
+- **本地发现缓存**：缺乏完整的缓存系统，每次 Agent 启动都需发起“进程启动 -> 发现工具列表”的完整子流程；由于未实现 `CallToolResult` 标准化处理，难以执行超量回查防护。
+
+### Phase 10 Skills 系统
+- **配置解析扩展**：Frontmatter 解析器极度简化，仅能识别键值对位于同一行的基本属性，不兼容多行值或数组结构解析。
+- **扫描规则弹性**：采用原生 `fs.readdir` 进行限制层级的检索（固定最大 4 层，扫描两处指定根目录），未来可替换为 `fast-glob` 库提供无死角的按需深层检索能力。
+
+
+## 补充
+- 配置文件支持
