@@ -4,7 +4,7 @@
 
 一个运行在终端里的 AI 编程助手，能读写文件、执行命令、调用 MCP 工具，在本地环境中完成软件工程任务。
 
-## ✨ 特性
+## 特性
 
 - **ReAct 循环** — 手写 Think → Act → Observe 循环，脱离 SDK 自动编排
 - **11 个内置工具** — `read_file` / `write_file` / `edit_file` / `bash` / `list_directory` / `search_files` / `update_plan` / `get_memory` / `remember_note` / `search_history` / `create_skill`
@@ -22,13 +22,33 @@
 - **Subagent 系统** — 父 Agent 可派遣子 Agent 完成子任务：阻塞式 `spawn_agent` 和异步式 `send_input` / `wait` / `close_agent` 两套方案
 - **学习闭环** — `remember_note` 跨会话笔记、`search_history` 历史检索、`create_skill` Skill 自我建立，无需模型微调的持续进化能力
 
-## �️ 技术栈
+## 技术栈
 
 - **核心交互**：[React](https://react.dev/) + [Ink](https://github.com/vadimdemedes/ink) 构建终端 TUI
 - **终端美化**：[unicode-animations](https://github.com/hcfy/unicode-animations) 实现平滑的终端动画
 - **工具扩展**：[@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) (MCP)
 
-## �🚀 快速开始
+## 安装
+
+**方式一：从 npm 安装（推荐）**
+
+```bash
+npm install -g @hflin/cclin
+cclin
+```
+
+**方式二：从源码构建**
+
+```bash
+# 编译 TypeScript
+pnpm run build
+
+# 本地全局链接
+npm link
+cclin
+```
+
+## 快速开始
 
 ```bash
 # 克隆项目
@@ -44,7 +64,34 @@ pnpm install
 pnpm run dev
 ```
 
-## ⌨️ 快捷键
+## 配置
+
+### 配置文件（`~/.cclin/config.toml`）
+
+首次运行时自动生成带注释的模板文件。主要配置项：
+
+```toml
+[llm]
+api_key = "sk-xxx"              # OpenAI 兼容 API Key
+base_url = "https://api.openai.com/v1"  # API 地址
+model = "gpt-4o-mini"           # 模型名称
+provider = "openai"             # Provider 类型
+
+[approval]
+policy = "once"                 # always / once / session
+```
+
+环境变量 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`MODEL_NAME` 可覆盖 TOML 配置。
+`CCLIN_HOME` 可重定向配置目录（默认 `~/.cclin`）。
+
+### 扩展文件
+
+- **`AGENTS.md`** — 放在项目根目录，包含项目级开发规范
+- **`~/.cclin/SOUL.md`** — 用户人格偏好（语言、风格等）
+- **`.agents/skills/*/SKILL.md`** — 技能文件
+- **`mcp_config.json`** — MCP Server 配置
+
+## 快捷键
 
 | 快捷键 / 命令 | 说明 |
 |------|------|
@@ -60,7 +107,7 @@ pnpm run dev
 | `/image <path> [描述]` | 附加图片文件（支持 png/jpg/webp/gif，≤20 MB） |
 | `Ctrl+C` | 退出 |
 
-## 🏗️ 架构
+## 架构
 
 ```
 cclin/
@@ -100,34 +147,7 @@ cclin/
 └── docs/                     # 学习笔记
 ```
 
-## ⚙️ 配置
-
-### 配置文件（`~/.cclin/config.toml`）
-
-首次运行时自动生成带注释的模板文件。主要配置项：
-
-```toml
-[llm]
-api_key = "sk-xxx"              # OpenAI 兼容 API Key
-base_url = "https://api.openai.com/v1"  # API 地址
-model = "gpt-4o-mini"           # 模型名称
-provider = "openai"             # Provider 类型
-
-[approval]
-policy = "once"                 # always / once / session
-```
-
-环境变量 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`MODEL_NAME` 可覆盖 TOML 配置。
-`CCLIN_HOME` 可重定向配置目录（默认 `~/.cclin`）。
-
-### 扩展文件
-
-- **`AGENTS.md`** — 放在项目根目录，包含项目级开发规范
-- **`~/.cclin/SOUL.md`** — 用户人格偏好（语言、风格等）
-- **`.agents/skills/*/SKILL.md`** — 技能文件
-- **`mcp_config.json`** — MCP Server 配置
-
-## 🖼️ 多模态输入
+## 多模态输入
 
 在输入框中先键入 `/image` 命令附加图片，再键入文字描述回车发送：
 
@@ -137,10 +157,10 @@ policy = "once"                 # always / once / session
 
 - 支持格式：`png` / `jpg` / `jpeg` / `webp` / `gif`
 - 单次最大 **20 MB**，超出会在提交前提示错误
-- TUI 中显示待附加标记 `📎 [Image #1] filename.png`，回车后将图片与文字一起发送给 LLM
+- TUI 中显示待附加标记 `[Image #1] filename.png`，回车后将图片与文字一起发送给 LLM
 - **模型要求**：需配置支持 Vision 的模型（如 `gpt-4o`），否则 API 会返回错误
 
-## 🤖 Subagent 系统
+## Subagent 系统
 
 cclin 支持「父 Agent 派遣子 Agent」模式，适合并行子任务、完全隔离的工作界面等场景。
 
@@ -151,29 +171,9 @@ cclin 支持「父 Agent 派遣子 Agent」模式，适合并行子任务、完�
 给 src/utils/ 目录下所有文件生成单元测试
 ```
 
-**异步式（send_input / wait / close_agent）**：父 Agent 可持续其他工作，笺时 `wait` 收取结果。子 Agent 全部共享主 Agent 的工具集和审批策略（子 Agent 使用 `session` 级，即全量自动批准）。
+**异步式（send_input / wait / close_agent）**：父 Agent 可持续其他工作，届时 `wait` 收取结果。子 Agent 全部共享主 Agent 的工具集和审批策略（子 Agent 使用 `session` 级，即全量自动批准）。
 
-## 📦 安装
-
-**方式一：从 npm 安装（推荐）**
-
-```bash
-npm install -g @hflin/cclin
-cclin
-```
-
-**方式二：从源码构建**
-
-```bash
-# 编译 TypeScript
-pnpm run build
-
-# 本地全局链接
-npm link
-cclin
-```
-
-## 🧪 测试
+## 测试
 
 ```bash
 pnpm test          # 运行所有测试
@@ -181,6 +181,6 @@ pnpm test:watch    # 监视模式
 pnpm typecheck     # TypeScript 类型检查
 ```
 
-## 📄 License
+## License
 
 MIT
