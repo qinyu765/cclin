@@ -22,6 +22,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
+    "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.28.0",
     "gpt-tokenizer": "^3.4.0",
     "ink": "^6.8.0",

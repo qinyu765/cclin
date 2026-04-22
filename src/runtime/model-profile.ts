@@ -62,6 +62,11 @@ const KNOWN_PROFILES: Record<string, ProfileEntry> = {
         supportsReasoningContent: false,
         contextWindow: 200_000,
     },
+    'gemini': {
+        supportsParallelToolCalls: true,
+        supportsReasoningContent: false,
+        contextWindow: 1_000_000,
+    },
 }
 
 // ─── 解析函数 ─────────────────────────────────────────────────────────────────

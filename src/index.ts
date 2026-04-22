@@ -13,6 +13,10 @@ import { loadConfig } from './config/index.js'
 import { createProvider } from './llm/provider.js'
 // Side-effect: registers OpenAI provider
 import './llm/client.js'
+// Side-effect: registers Anthropic provider
+import './llm/anthropic-provider.js'
+// Side-effect: registers Gemini provider
+import './llm/gemini-provider.js'
 import { Session } from './runtime/session.js'
 import { ApprovalManager } from './tools/approval.js'
 import { ToolOrchestrator } from './tools/orchestrator.js'

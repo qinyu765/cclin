@@ -142,10 +142,20 @@ function mergeConfig(
 /** Apply environment variable overrides (backward compat with .env). */
 function applyEnvOverrides(config: CclinConfig): CclinConfig {
     const env = process.env
+
+    // Provider-specific API key env vars, with OPENAI_API_KEY as general fallback
+    const providerKeyMap: Record<string, string | undefined> = {
+        openai: env.OPENAI_API_KEY,
+        anthropic: env.ANTHROPIC_API_KEY,
+        gemini: env.GEMINI_API_KEY,
+    }
+    const apiKeyOverride =
+        providerKeyMap[config.llm.provider] ?? env.OPENAI_API_KEY
+
     return {
         llm: {
             ...config.llm,
-            api_key: env.OPENAI_API_KEY ?? config.llm.api_key,
+            api_key: apiKeyOverride ?? config.llm.api_key,
             base_url: env.OPENAI_BASE_URL ?? config.llm.base_url,
             model: env.MODEL_NAME ?? config.llm.model,
         },

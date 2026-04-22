@@ -4,10 +4,8 @@
  * 设计：定义统一的 LLMProvider 接口，使 client.ts 可以基于配置
  * 切换不同后端（OpenAI、Anthropic、Gemini 等），无需修改调用方。
  *
- * 当前实现的 Provider：
+ * 已实现的 Provider：
  *   - OpenAIProvider（同时支持 OpenAI-compatible API，如 NewAPI/DeepSeek）
- *
- * 后续扩展：
  *   - AnthropicProvider（原生 Anthropic SDK）
  *   - GeminiProvider（Google Generative AI SDK）
  */
@@ -22,7 +20,7 @@ import type { LLMProviderType } from '../config/types.js'
 
 export type ProviderConfig = {
     apiKey: string
-    baseURL: string
+    baseURL?: string
     model: string
     tools?: Array<{
         type: 'function'

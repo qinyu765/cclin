@@ -13,7 +13,7 @@
 - **多行编辑** — Alt+Enter 换行、↑↓ 多行导航、ESC 清空输入
 - **审批系统** — 危险操作自动暂停等待确认（always / once / session 三级策略）
 - **TOML 配置** — 用户级 `~/.cclin/config.toml`，首次运行自动生成模板
-- **多 Provider 抽象** — 统一 LLMProvider 接口，支持 OpenAI/DeepSeek/NewAPI 等兼容 API
+- **多 Provider 原生支持** — 统一 LLMProvider 接口，支持 OpenAI、Anthropic (Claude)、Google Gemini 三大原生 SDK 直连，同时兼容 DeepSeek/NewAPI 等 OpenAI 兼容 API
 - **上下文压缩** — 长对话自动压缩，保留近期消息不丢失关键上下文
 - **Skills 系统** — 发现并加载 `SKILL.md` 技能文件，扩展 Agent 能力
 - **Model Profile** — 不同模型的参数差异化配置
@@ -58,7 +58,8 @@ git clone <repo-url> && cd cclin
 pnpm install
 
 # 配置 API Key（首次运行会自动生成 ~/.cclin/config.toml）
-# 编辑 config.toml 填入你的 API Key，或设置环境变量 OPENAI_API_KEY
+# 编辑 config.toml 填入你的 API Key
+# 或设置环境变量 OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY
 
 # 启动
 pnpm run dev
@@ -70,18 +71,40 @@ pnpm run dev
 
 首次运行时自动生成带注释的模板文件。主要配置项：
 
+**OpenAI / DeepSeek（默认）**
+
 ```toml
 [llm]
-api_key = "sk-xxx"              # OpenAI 兼容 API Key
-base_url = "https://api.openai.com/v1"  # API 地址
-model = "gpt-4o-mini"           # 模型名称
-provider = "openai"             # Provider 类型
+provider = "openai"
+api_key = "sk-xxx"
+base_url = "https://api.openai.com/v1"
+model = "gpt-4o-mini"
+```
 
+**Anthropic (Claude)**
+
+```toml
+[llm]
+provider = "anthropic"
+api_key = "sk-ant-xxx"
+model = "claude-sonnet-4-20250514"
+```
+
+**Google Gemini**
+
+```toml
+[llm]
+provider = "gemini"
+api_key = "AIzaSy-xxx"
+model = "gemini-2.5-pro"
+```
+
+```toml
 [approval]
 policy = "once"                 # always / once / session
 ```
 
-环境变量 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`MODEL_NAME` 可覆盖 TOML 配置。
+环境变量覆盖：`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`、`OPENAI_BASE_URL`、`MODEL_NAME`。
 `CCLIN_HOME` 可重定向配置目录（默认 `~/.cclin`）。
 
 ### 扩展文件
@@ -117,7 +140,9 @@ cclin/
 │   ├── config/               # TOML 配置加载器
 │   ├── llm/
 │   │   ├── provider.ts       # LLMProvider 接口 + Registry
-│   │   └── client.ts         # OpenAI Provider（流式/非流式＋ Vision 多模态）
+│   │   ├── client.ts         # OpenAI Provider（流式/非流式＋ Vision 多模态）
+│   │   ├── anthropic-provider.ts  # Anthropic Provider（原生 SDK）
+│   │   └── gemini-provider.ts     # Gemini Provider（原生 SDK）
 │   ├── runtime/
 │   │   ├── session.ts        # 会话管理
 │   │   ├── react-loop.ts     # ReAct 循环引擎

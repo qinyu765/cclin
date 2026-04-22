@@ -361,7 +361,10 @@ export class OpenAIProvider implements LLMProvider {
     readonly name = 'openai'
 
     createCallLLM(config: ProviderConfig): CallLLM {
-        return createCallLLM(config)
+        return createCallLLM({
+            ...config,
+            baseURL: config.baseURL ?? 'https://api.openai.com/v1',
+        })
     }
 }
 
