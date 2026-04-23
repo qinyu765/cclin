@@ -4,7 +4,7 @@
  * 保存路径：~/.cclin/skills/<name>/SKILL.md
  * 格式：带 YAML frontmatter 的 Markdown，与 skills.ts 的解析逻辑完全兼容。
  *
- * 保存后，下次 pnpm start 时 loadSkills() 会自动发现并注入 system prompt。
+ * 保存后，下次 pnpm dev 时 loadSkills() 会自动发现并注入 system prompt。
  */
 
 import * as fs from 'node:fs/promises'

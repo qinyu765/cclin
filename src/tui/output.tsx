@@ -95,7 +95,7 @@ const CJKTextBlock = memo(function CJKTextBlock({
     )
 })
 
-/** 单步：思考 + 工具调用。 */
+/** 单步：思考 + 工具调用（支持并行多工具）。 */
 const StepCell = memo(function StepCell({
     step,
     isCompleted,
@@ -103,37 +103,41 @@ const StepCell = memo(function StepCell({
     step: StepView
     isCompleted?: boolean
 }) {
-    const param = step.action ? mainParam(step.action.input) : null
+    // Use actions array if available, fallback to single action
+    const actions = step.actions ?? (step.action ? [step.action] : [])
     return (
         <Box flexDirection="column">
             {step.thinking ? (
                 <Box flexDirection="row">
                     <Box width={2}>
-                        {!isCompleted && !step.action ? <Spinner name="braille" color="gray" /> : <Text color="gray">● </Text>}
+                        {!isCompleted && actions.length === 0 ? <Spinner name="braille" color="gray" /> : <Text color="gray">● </Text>}
                     </Box>
                     <Box flexGrow={1}><Text color="gray">{truncate(step.thinking, 120)}</Text></Box>
                 </Box>
             ) : null}
-            {step.action ? (
-                <Box flexDirection="row">
-                    <Box width={2}>
-                        {!isCompleted && step.toolStatus === TOOL_STATUS.EXECUTING ? (
-                            <Spinner name="orbit" color="yellow" />
-                        ) : (
-                            <Text color={statusColor(step.toolStatus)}>● </Text>
-                        )}
+            {actions.map((act, i) => {
+                const param = mainParam(act.input)
+                return (
+                    <Box key={`${act.tool}-${i}`} flexDirection="row">
+                        <Box width={2}>
+                            {!isCompleted && step.toolStatus === TOOL_STATUS.EXECUTING ? (
+                                <Spinner name="orbit" color="yellow" />
+                            ) : (
+                                <Text color={statusColor(step.toolStatus)}>● </Text>
+                            )}
+                        </Box>
+                        <Box flexGrow={1}>
+                            <Text>
+                                <Text color="gray">Used </Text>
+                                <Text color="cyan">{act.tool}</Text>
+                                {param ? <Text color="gray"> ({param})</Text> : null}
+                            </Text>
+                        </Box>
                     </Box>
-                    <Box flexGrow={1}>
-                        <Text>
-                            <Text color="gray">Used </Text>
-                            <Text color="cyan">{step.action.tool}</Text>
-                            {param ? <Text color="gray"> ({param})</Text> : null}
-                        </Text>
-                    </Box>
-                </Box>
-            ) : null}
+                )
+            })}
             {/* Show streaming assistant text (before turn_final) */}
-            {!isCompleted && !step.action && step.assistantText ? (
+            {!isCompleted && actions.length === 0 && step.assistantText ? (
                 <CJKTextBlock prefix=">> " prefixColor="red" text={step.assistantText} />
             ) : null}
         </Box>

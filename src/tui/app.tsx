@@ -131,11 +131,24 @@ export function App({
             setContextPercent(usagePercent)
         },
         onContextCompacted: ({ status, beforeTokens, afterTokens, reductionPercent }) => {
+            setBusy(false)
             if (status === 'success') {
                 dispatch({
                     type: 'append_system_message',
                     title: 'Context compacted',
                     content: `${beforeTokens} → ${afterTokens} tokens (-${reductionPercent}%)`,
+                })
+            } else if (status === 'skipped') {
+                dispatch({
+                    type: 'append_system_message',
+                    title: 'Compact skipped',
+                    content: 'Context usage is below threshold, no compaction needed.',
+                })
+            } else {
+                dispatch({
+                    type: 'append_system_message',
+                    title: 'Compact failed',
+                    content: 'An error occurred during context compaction.',
                 })
             }
         },
@@ -197,8 +210,52 @@ export function App({
                 dispatch({ type: 'clear_all' })
                 return
             }
-            // 其他 slash 命令（compact / model / approve / retry 等）
-            // 作为普通消息发送给 LLM，由 session 层解释执行
+            if (cmd.name === 'model') {
+                dispatch({
+                    type: 'append_system_message',
+                    title: 'Current model',
+                    content: `${model}`,
+                })
+                return
+            }
+            if (cmd.name === 'approve') {
+                const mode = trimmed.split(/\s+/)[1]?.toLowerCase()
+                if (['always', 'once', 'session'].includes(mode ?? '')) {
+                    // Show feedback, then pass to index.ts to actually change the policy
+                    dispatch({
+                        type: 'append_system_message',
+                        title: 'Approval policy changed',
+                        content: `${approvalPolicy} → ${mode}`,
+                    })
+                } else {
+                    dispatch({
+                        type: 'append_system_message',
+                        title: 'Approval policy',
+                        content: `Current: ${approvalPolicy}. Usage: /approve <always|once|session>`,
+                    })
+                    return
+                }
+            }
+            if (cmd.name === 'compact') {
+                setBusy(true)
+                dispatch({
+                    type: 'append_system_message',
+                    title: 'Compacting',
+                    content: 'Compressing context history…',
+                })
+                await onSubmit(input)
+                // setBusy(false) is handled by onContextCompacted middleware
+                return
+            }
+            if (cmd.name === 'image') {
+                dispatch({
+                    type: 'append_system_message',
+                    title: 'Image',
+                    content: 'Usage: /image <path> [description]. Type the command in the input box directly.',
+                })
+                return
+            }
+            // Other slash commands pass through to index.ts
         }
 
         // 有附件时构建多模态 content，否则纯文本
@@ -207,7 +264,7 @@ export function App({
                 ? buildMultimodalContent(input, attachments)
                 : input
         await onSubmit(content)
-    }, [onSubmit, onExit, exit, dispatch])
+    }, [onSubmit, onExit, exit, dispatch, model, approvalPolicy])
 
     return (
         <Box flexDirection="column" padding={1}>

@@ -157,7 +157,6 @@ let session: Session | null = null
 let requestApprovalFn: ((req: ApprovalRequest) => Promise<ApprovalDecision>) | null = null
 let onAssistantChunkFn: ((step: number, chunk: string) => void) | null = null
 
-let lastInput = ''
 
 const handleSubmit = async (content: UserContent) => {
     if (!session) return
@@ -180,13 +179,6 @@ const handleSubmit = async (content: UserContent) => {
         return
     }
 
-    // /retry 命令 — 重新发送上一次用户输入
-    if (textInput === '/retry') {
-        if (!lastInput) return
-        await session.runTurn(lastInput)
-        return
-    }
-
     // /clear 命令 — 清空当前会话上下文
     if (textInput === '/clear') {
         session.getHistory().length = 0
@@ -198,7 +190,6 @@ const handleSubmit = async (content: UserContent) => {
         return
     }
 
-    lastInput = textInput || '[multimodal]'
     await session.runTurn(content)
 }
 
@@ -261,7 +252,7 @@ const app = render(
         onApprovalReady: handleApprovalReady,
         onAssistantChunkReady: handleAssistantChunkReady,
     }),
-    { exitOnCtrlC: true },
+    { exitOnCtrlC: false },
 )
 
 await app.waitUntilExit()

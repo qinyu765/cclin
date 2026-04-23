@@ -45,12 +45,6 @@ export const COMMAND_REGISTRY: readonly CommandDef[] = [
         category: 'session',
     },
     {
-        name: 'retry',
-        slash: '/retry',
-        desc: 'Retry last message',
-        category: 'session',
-    },
-    {
         name: 'clear',
         slash: '/clear',
         desc: 'Clear conversation',

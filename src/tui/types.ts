@@ -31,6 +31,8 @@ export type StepView = {
     assistantText: string
     thinking?: string
     action?: ToolAction
+    /** All parallel tool calls in this step (superset of `action`). */
+    actions?: ToolAction[]
     observation?: string
     toolStatus?: ToolStatus
 }

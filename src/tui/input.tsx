@@ -58,6 +58,11 @@ export function InputArea({
     const [pendingAttachments, setPendingAttachments] = useState<ImageAttachment[]>([])
     const [attachError, setAttachError] = useState<string | null>(null)
 
+    // ── Input history (shell-style ↑/↓ navigation) ──────────────────────
+    const historyStack = useRef<string[]>([])
+    const historyIndex = useRef(-1)  // -1 = not browsing history
+    const savedDraft = useRef('')    // preserves unsaved input when browsing
+
     const commitEditor = useCallback((next: { value: string; cursor: number }) => {
         editorRef.current = next
         setEditor(next)
@@ -78,8 +83,40 @@ export function InputArea({
 
     const { stdout } = useStdout()
 
+    // ── Double Ctrl+C to exit ────────────────────────────────────────────
+    const ctrlCPendingRef = useRef(false)
+    const ctrlCTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const [ctrlCHint, setCtrlCHint] = useState(false)
+
     // 键盘输入处理
     useInput((input, key) => {
+        // Ctrl+C: double-press to exit (works even when busy)
+        if (key.ctrl && input === 'c') {
+            if (ctrlCPendingRef.current) {
+                // Second press → exit
+                if (ctrlCTimerRef.current) clearTimeout(ctrlCTimerRef.current)
+                ctrlCPendingRef.current = false
+                setCtrlCHint(false)
+                onSubmit('/exit')
+            } else {
+                // First press → show hint, reset after 3s
+                ctrlCPendingRef.current = true
+                setCtrlCHint(true)
+                ctrlCTimerRef.current = setTimeout(() => {
+                    ctrlCPendingRef.current = false
+                    setCtrlCHint(false)
+                }, 3000)
+            }
+            return
+        }
+
+        // Any other key resets Ctrl+C pending state
+        if (ctrlCPendingRef.current) {
+            ctrlCPendingRef.current = false
+            setCtrlCHint(false)
+            if (ctrlCTimerRef.current) clearTimeout(ctrlCTimerRef.current)
+        }
+
         // 审批模式
         if (approvalPending && onApproval) {
             if (input === 'y' || input === 'Y') onApproval(true)
@@ -125,12 +162,30 @@ export function InputArea({
             return
         }
 
-        // Arrow up/down: slash suggestion mode or multiline cursor
+        // Arrow up/down: slash suggestion → history navigation → multiline cursor
         if (key.upArrow) {
             if (activeSuggestions.length > 0) {
                 commitSlashIdx(i => Math.max(0, i - 1))
+                return
+            }
+            const current = editorRef.current
+            const layout = getWrappedCursorLayout(current.value, current.cursor, contentW)
+            if (layout.row <= 0) {
+                // Already on first row → browse history backward
+                const stack = historyStack.current
+                if (stack.length === 0) return
+                if (historyIndex.current === -1) {
+                    // Entering history: save current draft
+                    savedDraft.current = current.value
+                    historyIndex.current = stack.length - 1
+                } else if (historyIndex.current > 0) {
+                    historyIndex.current--
+                } else {
+                    return // already at oldest entry
+                }
+                const entry = stack[historyIndex.current] ?? ''
+                commitEditor({ value: entry, cursor: entry.length })
             } else {
-                const current = editorRef.current
                 commitEditor({ value: current.value, cursor: moveCursorUp(current.value, current.cursor, contentW) })
             }
             return
@@ -138,8 +193,24 @@ export function InputArea({
         if (key.downArrow) {
             if (activeSuggestions.length > 0) {
                 commitSlashIdx(i => Math.min(activeSuggestions.length - 1, i + 1))
+                return
+            }
+            const current = editorRef.current
+            const layout = getWrappedCursorLayout(current.value, current.cursor, contentW)
+            if (layout.row >= layout.lines.length - 1) {
+                // Already on last row → browse history forward
+                if (historyIndex.current === -1) return // not browsing history
+                if (historyIndex.current < historyStack.current.length - 1) {
+                    historyIndex.current++
+                    const entry = historyStack.current[historyIndex.current] ?? ''
+                    commitEditor({ value: entry, cursor: entry.length })
+                } else {
+                    // Past newest entry → restore draft
+                    historyIndex.current = -1
+                    const draft = savedDraft.current
+                    commitEditor({ value: draft, cursor: draft.length })
+                }
             } else {
-                const current = editorRef.current
                 commitEditor({ value: current.value, cursor: moveCursorDown(current.value, current.cursor, contentW) })
             }
             return
@@ -180,6 +251,12 @@ export function InputArea({
 
             const trimmed = currentVal
             if (!trimmed && pendingAttachments.length === 0) return
+            // Push to input history (skip consecutive duplicates)
+            if (trimmed && trimmed !== historyStack.current[historyStack.current.length - 1]) {
+                historyStack.current.push(trimmed)
+            }
+            historyIndex.current = -1
+            savedDraft.current = ''
             commitEditor({ value: '', cursor: 0 })
             const atts = pendingAttachments
             setPendingAttachments([])
@@ -229,6 +306,9 @@ export function InputArea({
 
         // 普通字符输入
         if (input && !key.ctrl && !key.meta) {
+            // Typing exits history browsing mode
+            historyIndex.current = -1
+            savedDraft.current = ''
             const current = editorRef.current
             commitEditor(insertAtCursor(current.value, current.cursor, input))
         }
@@ -259,7 +339,7 @@ export function InputArea({
                         <Text color="cyan">▊</Text>
                     </Box>
                 </Box>
-                <Footer busy={false} contextPercent={contextPercent} approvalPending activityTick={activityTick} />
+                <Footer busy={false} contextPercent={contextPercent} approvalPending activityTick={activityTick} ctrlCHint={ctrlCHint} />
             </Box>
         )
     }
@@ -272,7 +352,7 @@ export function InputArea({
                     <Text color="cyan"><Spinner name="dna" color="cyan" /> </Text>
                     <Text color="gray">{editor.value}</Text>
                 </Box>
-                <Footer busy contextPercent={contextPercent} activityTick={activityTick} />
+                <Footer busy contextPercent={contextPercent} activityTick={activityTick} ctrlCHint={ctrlCHint} />
             </Box>
         )
     }
@@ -339,7 +419,7 @@ export function InputArea({
                     <Text color="red">⚠ {attachError}</Text>
                 </Box>
             ) : null}
-            <Footer busy={false} contextPercent={contextPercent} activityTick={activityTick} />
+            <Footer busy={false} contextPercent={contextPercent} activityTick={activityTick} ctrlCHint={ctrlCHint} />
         </Box>
     )
 }
@@ -351,11 +431,13 @@ function Footer({
     contextPercent,
     approvalPending = false,
     activityTick = 0,
+    ctrlCHint = false,
 }: {
     busy: boolean
     contextPercent: number
     approvalPending?: boolean
     activityTick?: number
+    ctrlCHint?: boolean
 }) {
     const [elapsed, setElapsed] = useState(0)
 
@@ -370,9 +452,11 @@ function Footer({
         return () => clearInterval(id)
     }, [busy])
 
-    const helpText = approvalPending
-        ? 'y allow • n deny'
-        : 'Enter send • Alt+Enter newline • ESC clear • /compact'
+    const helpText = ctrlCHint
+        ? ''
+        : approvalPending
+            ? 'y allow • n deny'
+            : 'Enter send • Alt+Enter newline • ↑↓ history • ESC clear'
 
     const timerColor = elapsed >= 30 ? 'red' : elapsed >= 15 ? 'yellow' : 'gray'
     const timerSuffix = elapsed >= 30 ? ' ⚠ stalled?' : ''
@@ -380,7 +464,9 @@ function Footer({
     return (
         <Box justifyContent="space-between" marginTop={0}>
             <Box>
-                {busy ? (
+                {ctrlCHint ? (
+                    <Text color="yellow">Press Ctrl+C again to exit</Text>
+                ) : busy ? (
                     <Text color={timerColor}>
                         Working... ({elapsed}s){timerSuffix}
                     </Text>

@@ -222,7 +222,7 @@ export class Session {
 
         // 无 tokenCounter 时跳过
         if (!this.tokenCounter) {
-            return {
+            const result: CompactResult = {
                 reason,
                 status: 'skipped',
                 beforeTokens: 0,
@@ -231,6 +231,12 @@ export class Session {
                 reductionPercent: 0,
                 errorMessage: 'No tokenCounter configured',
             }
+            await runHook(this.hookRunners, 'onContextCompacted', {
+                sessionId: this.id,
+                turn: this.turnIndex,
+                ...result,
+            })
+            return result
         }
 
         const beforeTokens = this.tokenCounter.countMessages(this.history)
@@ -242,7 +248,7 @@ export class Session {
 
         // 无可压缩内容时跳过
         if (!historyWithoutSystem.length) {
-            return {
+            const result: CompactResult = {
                 reason,
                 status: 'skipped',
                 beforeTokens,
@@ -250,6 +256,12 @@ export class Session {
                 thresholdTokens,
                 reductionPercent: 0,
             }
+            await runHook(this.hookRunners, 'onContextCompacted', {
+                sessionId: this.id,
+                turn: this.turnIndex,
+                ...result,
+            })
+            return result
         }
 
         try {
@@ -317,7 +329,7 @@ export class Session {
                 summary: summaryText,
             }
         } catch (err) {
-            return {
+            const result: CompactResult = {
                 reason,
                 status: 'failed',
                 beforeTokens,
@@ -326,6 +338,12 @@ export class Session {
                 reductionPercent: 0,
                 errorMessage: (err as Error).message,
             }
+            await runHook(this.hookRunners, 'onContextCompacted', {
+                sessionId: this.id,
+                turn: this.turnIndex,
+                ...result,
+            })
+            return result
         }
     }
 

@@ -158,10 +158,13 @@ export function chatTimelineReducer(
                 const steps = ensureStep(tv.steps, action.step)
                 const cur = steps[action.step]
                 if (!cur) return tv
+                const prevActions = cur.actions ?? []
+                const nextActions = [...prevActions, action.action]
                 steps[action.step] = {
                     ...cur,
-                    action: action.action,
-                    thinking: action.thinking,
+                    action: cur.action ?? action.action,
+                    actions: nextActions,
+                    thinking: action.thinking ?? cur.thinking,
                     toolStatus: TOOL_STATUS.EXECUTING,
                 }
                 return { ...tv, steps }
