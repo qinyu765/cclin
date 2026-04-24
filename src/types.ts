@@ -236,7 +236,7 @@ export type ToolDefinition = {
 // ─── Phase 4: 审批 & 工具编排类型 ──────────────────────────────────────────────
 
 /** 审批策略：always=每次询问, once=同指纹本轮只问一次, session=整个会话有效。 */
-export type ApprovalPolicy = 'always' | 'once' | 'session'
+export type ApprovalPolicy = 'always' | 'once' | 'session' | 'auto'
 
 /** 用户审批决定。 */
 export type ApprovalDecision = 'approve' | 'deny'

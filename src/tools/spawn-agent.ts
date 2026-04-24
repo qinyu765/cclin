@@ -11,13 +11,16 @@
  * 关键设计决策：
  *   1. 子 Session 历史完全独立，与父 Session 不共享
  *   2. 子 Agent 默认只使用"只读"工具集，避免嵌套写操作冲突
- *   3. 审批策略默认 auto（子 Agent 被父 Agent 信任）
+ *   3. 审批策略使用 auto（子 Agent 被父 Agent 信任，全部放行）
  *   4. 通过 onChunk 回调向父 Session 的 onAssistantChunk 转发进度
  */
 
 import { randomUUID } from 'node:crypto'
 import { Session } from '../runtime/session.js'
 import type { ToolDefinition, ToolResult, CallLLM, ExecuteTool } from '../types.js'
+
+/** 子 Agent 输出最大字符数（超过则截断，防止回灌到父 Agent 时撑爆上下文）。 */
+const MAX_RESULT_CHARS = 10_000
 
 // ─── 工厂函数参数 ──────────────────────────────────────────────────────────────
 
@@ -141,13 +144,20 @@ export function createSpawnAgentTool(deps: SpawnAgentDeps): ToolDefinition {
             const shortId = childId.slice(0, 8)
             const stepCount = result.steps.length
 
+            // 截断过长的子 Agent 输出，防止撑爆父 Agent 上下文
+            const rawText = result.finalText
+            const finalText = rawText.length > MAX_RESULT_CHARS
+                ? rawText.slice(0, MAX_RESULT_CHARS) +
+                  `\n...[truncated] Sub-agent output too long (${rawText.length} chars, max ${MAX_RESULT_CHARS})`
+                : rawText
+
             if (result.status === 'error') {
                 return {
                     output: [
                         `[Sub-agent ${shortId}] Failed after ${stepCount} step(s).`,
                         `Error: ${result.errorMessage ?? 'unknown'}`,
                         '',
-                        `Last output: ${result.finalText}`,
+                        `Last output: ${finalText}`,
                     ].join('\n'),
                     isError: true,
                 }
@@ -157,7 +167,7 @@ export function createSpawnAgentTool(deps: SpawnAgentDeps): ToolDefinition {
                 output: [
                     `[Sub-agent ${shortId}] Completed in ${stepCount} step(s).`,
                     '',
-                    result.finalText,
+                    finalText,
                 ].join('\n'),
             }
         },

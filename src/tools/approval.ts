@@ -104,6 +104,11 @@ export class ApprovalManager {
         input: unknown,
         isMutating: boolean,
     ): ApprovalCheckResult {
+        // auto 策略：全部放行（子 Agent 信任模式）
+        if (this._policy === 'auto') {
+            return { needsApproval: false }
+        }
+
         // 非 mutating 工具直接放行
         if (!isMutating) {
             return { needsApproval: false }

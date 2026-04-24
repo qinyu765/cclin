@@ -52,6 +52,9 @@ type InternalHandle = {
  * 由 index.ts 在启动时创建一个单例，然后注入给 createAsyncSubAgentTools()。
  */
 export class SubAgentManager {
+    /** 最大同时存活的子 Agent 数量。 */
+    private static readonly MAX_AGENTS = 5
+
     /** 所有活跃/已关闭的子 Agent 句柄。 */
     private readonly _handles = new Map<string, InternalHandle>()
 
@@ -67,8 +70,19 @@ export class SubAgentManager {
      * 创建新的子 Agent（对应 spawn_agent 工具）。
      *
      * @returns 子 Agent 的唯一 ID
+     * @throws 如果活跃子 Agent 数量已达上限
      */
     spawn(options?: { systemPrompt?: string }): string {
+        // 并发数量限制
+        const activeCount = Array.from(this._handles.values())
+            .filter(h => h.status !== 'closed').length
+        if (activeCount >= SubAgentManager.MAX_AGENTS) {
+            throw new Error(
+                `Maximum concurrent sub-agents (${SubAgentManager.MAX_AGENTS}) reached. ` +
+                'Close an existing agent before spawning a new one.',
+            )
+        }
+
         const id = randomUUID()
 
         const session = new Session({

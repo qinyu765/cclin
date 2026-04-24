@@ -37,7 +37,7 @@ export type LLMConfig = {
 
 // ─── Approval Config ──────────────────────────────────────────────────────
 
-export type ApprovalPolicy = 'always' | 'once' | 'session'
+export type ApprovalPolicy = 'always' | 'once' | 'session' | 'auto'
 
 export type ApprovalConfig = {
     /** Default approval policy */

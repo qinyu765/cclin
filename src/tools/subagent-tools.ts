@@ -155,7 +155,13 @@ export function createAsyncSubAgentTools(
                 }
 
                 try {
-                    const result = await manager.wait(agentId)
+                    const rawResult = await manager.wait(agentId)
+                    // 截断过长输出，防止撑爆父 Agent 上下文
+                    const MAX_RESULT_CHARS = 10_000
+                    const result = rawResult.length > MAX_RESULT_CHARS
+                        ? rawResult.slice(0, MAX_RESULT_CHARS) +
+                          `\n...[truncated] Sub-agent output too long (${rawResult.length} chars, max ${MAX_RESULT_CHARS})`
+                        : rawResult
                     return {
                         output: [
                             `[Sub-agent ${agentId.slice(0, 8)}] completed.`,

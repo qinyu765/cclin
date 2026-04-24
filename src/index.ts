@@ -91,9 +91,19 @@ if (Object.keys(mcpConfig).length > 0) {
 const approvalManager = new ApprovalManager({ policy: config.approval.policy })
 const orchestrator = new ToolOrchestrator(router, approvalManager)
 
-// 子 Agent 专用工具编排器（审批策略=session 即全部自动批准）
-const childApprovalManager = new ApprovalManager({ policy: 'session' })
-const childOrchestrator = new ToolOrchestrator(router, childApprovalManager)
+// 子 Agent 专用只读工具路由器（不注册 mutating 工具和 spawn_agent）
+const childRouter = new ToolRouter()
+childRouter.registerNativeTools([
+    readFileTool,
+    listDirectoryTool,
+    searchFilesTool,
+    getMemoryTool,
+    searchHistoryTool,
+])
+
+// 子 Agent 审批策略 = auto（全部放行，子 Agent 被父 Agent 信任）
+const childApprovalManager = new ApprovalManager({ policy: 'auto' })
+const childOrchestrator = new ToolOrchestrator(childRouter, childApprovalManager)
 const childExecuteTool = childOrchestrator.createExecuteTool()
 
 // 加载 Skills
