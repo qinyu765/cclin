@@ -15,7 +15,7 @@
 - **Skills 系统** — 发现并加载 `SKILL.md` 技能文件，扩展 Agent 能力
 - **Model Profile** — 不同模型的参数差异化配置
 - **会话持久化** — JSONL 日志记录，支持历史回放
-- **多模态输入** — `/image <path>` 附加图片，与支持 Vision 的模型（gpt-4o 等）对话
+- **多模态输入** — `Alt+V` 从剪贴板粘贴图片，与支持 Vision 的模型（gpt-4o 等）对话
 - **Subagent 系统** — 父 Agent 可派遣子 Agent 完成子任务：阻塞式 `spawn_agent` 和异步式 `send_input` / `wait` / `close_agent` 两套方案
 - **学习闭环** — `remember_note` 跨会话笔记、`search_history` 历史检索、`create_skill` Skill 自我建立，无需模型微调的持续进化能力
 
@@ -122,78 +122,9 @@ policy = "once"                 # always / once / session
 | `Ctrl+U` | 删除到当前行首 |
 | `Ctrl+A` / `Ctrl+E` | 跳转到行首 / 行尾 |
 | `/compact` | 手动压缩上下文 |
-| `/retry` | 重新发送上次输入 |
 | `/approve <mode>` | 切换审批策略 |
-| `/image <path> [描述]` | 附加图片文件（支持 png/jpg/webp/gif，≤20 MB） |
+| `Alt+V` | 附加剪切板里的图片（支持 png/jpg/webp/gif，≤20 MB） |
 | `Ctrl+C` | 退出 |
-
-## 架构
-
-```
-cclin/
-├── src/
-│   ├── index.ts              # 入口 + TUI 桥接
-│   ├── types.ts              # 共享类型定义（含 ContentPart 多模态类型）
-│   ├── config/               # TOML 配置加载器
-│   ├── llm/
-│   │   ├── provider.ts       # LLMProvider 接口 + Registry
-│   │   ├── client.ts         # OpenAI Provider（流式/非流式＋ Vision 多模态）
-│   │   ├── anthropic-provider.ts  # Anthropic Provider（原生 SDK）
-│   │   └── gemini-provider.ts     # Gemini Provider（原生 SDK）
-│   ├── runtime/
-│   │   ├── session.ts        # 会话管理
-│   │   ├── react-loop.ts     # ReAct 循环引擎
-│   │   ├── prompt.ts         # 系统提示词组装
-│   │   ├── compaction.ts     # 上下文压缩
-│   │   ├── hooks.ts          # 生命周期 Hook 系统
-│   │   ├── skills.ts         # 技能发现与加载
-│   │   ├── model-profile.ts  # 模型参数配置
-│   │   └── history.ts        # JSONL 会话持久化
-│   ├── tools/
-│   │   ├── router.ts         # 工具路由（Native + MCP）
-│   │   ├── orchestrator.ts   # 工具编排器
-│   │   ├── approval.ts       # 审批管理器
-│   │   ├── spawn-agent.ts    # 阻塞式 Subagent
-│   │   ├── subagent-manager.ts  # 异步 Subagent 生命周期
-│   │   ├── subagent-tools.ts # 异步 Subagent 工具套件
-│   │   ├── remember-note.ts  # 跨会话笔记写入
-│   │   ├── search-history.ts # 历史 JSONL 检索
-│   │   ├── create-skill.ts   # Skill 自我建立
-│   │   └── *.ts              # 各工具实现
-│   ├── tui/
-│   │   ├── image-attach.ts   # 图片附件处理（解析/验证/base64 编码）
-│   │   └── *.tsx             # Ink TUI 组件
-│   └── utils/                # 工具函数
-├── AGENTS.md                 # 项目级 Agent 指令
-├── PLAN.md                   # 开发路线图
-└── docs/                     # 学习笔记
-```
-
-## 多模态输入
-
-在输入框中先键入 `/image` 命令附加图片，再键入文字描述回车发送：
-
-```
-/image ./screenshot.png 这张截图里面有什么 bug？
-```
-
-- 支持格式：`png` / `jpg` / `jpeg` / `webp` / `gif`
-- 单次最大 **20 MB**，超出会在提交前提示错误
-- TUI 中显示待附加标记 `[Image #1] filename.png`，回车后将图片与文字一起发送给 LLM
-- **模型要求**：需配置支持 Vision 的模型（如 `gpt-4o`），否则 API 会返回错误
-
-## Subagent 系统
-
-cclin 支持「父 Agent 派遣子 Agent」模式，适合并行子任务、完全隔离的工作界面等场景。
-
-**阻塞式（spawn_agent）**：父 Agent 调用后等待子 Agent 完成并返回结果。
-
-```
-请使用 spawn_agent 完成以下任务并返回结果：
-给 src/utils/ 目录下所有文件生成单元测试
-```
-
-**异步式（send_input / wait / close_agent）**：父 Agent 可持续其他工作，届时 `wait` 收取结果。子 Agent 全部共享主 Agent 的工具集和审批策略（子 Agent 使用 `session` 级，即全量自动批准）。
 
 ## 测试
 
