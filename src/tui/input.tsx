@@ -23,7 +23,7 @@ import {
 } from './composer_input.js'
 import { Spinner } from './spinner.js'
 import type { ImageAttachment } from './image-attach.js'
-import { parseImageCommand } from './image-attach.js'
+import { cleanupTmpFile, readClipboardImage } from './image-attach.js'
 
 // ─── Slash Commands (从中央注册表导入) ────────────────────────────────────
 import { COMPLETION_CANDIDATES } from './commands.js'
@@ -126,8 +126,22 @@ export function InputArea({
 
         if (busy) return
 
+        // Ctrl+V (macOS/Linux) 或 Alt+V (Windows): 从剪贴板粘贴图片
+        if ((key.ctrl && input === 'v') || (key.meta && input === 'v')) {
+            setAttachError(null)
+            readClipboardImage().then(att => {
+                if (att) {
+                    setPendingAttachments(prev => [...prev, att])
+                } else {
+                    setAttachError('No image found in clipboard')
+                }
+            })
+            return
+        }
+
         const termW = stdout?.columns ?? process.stdout?.columns ?? 80
         const contentW = Math.max(1, termW - 3)
+
 
         // ESC: clear input (if non-empty)
         if (key.escape) {
@@ -220,23 +234,6 @@ export function InputArea({
         if (key.return) {
             const currentVal = editorRef.current.value.trim()
 
-            // /image 命令：异步解析附件，不提交消息
-            if (currentVal.startsWith('/image ') || currentVal === '/image') {
-                commitEditor({ value: '', cursor: 0 })
-                setAttachError(null)
-                parseImageCommand(currentVal).then(result => {
-                    if (result.ok) {
-                        setPendingAttachments(prev => [...prev, result.attachment])
-                        // 若有剩余文本，填回输入框
-                        if (result.remainingText) {
-                            commitEditor({ value: result.remainingText, cursor: result.remainingText.length })
-                        }
-                    } else {
-                        setAttachError(result.error)
-                    }
-                })
-                return
-            }
 
             // If slash suggestions are open, Enter should select and submit the highlighted command
             if (activeSuggestions.length > 0) {
@@ -456,7 +453,7 @@ function Footer({
         ? ''
         : approvalPending
             ? 'y allow • n deny'
-            : 'Enter send • Alt+Enter newline • ↑↓ history • ESC clear'
+            : 'Enter send • Alt+Enter newline • Alt+V image • ↑↓ history • ESC clear'
 
     const timerColor = elapsed >= 30 ? 'red' : elapsed >= 15 ? 'yellow' : 'gray'
     const timerSuffix = elapsed >= 30 ? ' ⚠ stalled?' : ''

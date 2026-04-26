@@ -8,8 +8,9 @@
  *   4. 构建 OpenAI Vision API 格式的 ContentPart 数组
  */
 
-import { readFile } from 'node:fs/promises'
-import { stat } from 'node:fs/promises'
+import { execSync, spawnSync } from 'node:child_process'
+import { readFile, stat, unlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { ContentPart } from '../types.js'
 
@@ -44,67 +45,22 @@ export type ImageAttachment = {
     sizeKB: number
 }
 
-/** 解析 /image 命令的结果。 */
-export type ParseImageCommandResult =
-    | { ok: true; attachment: ImageAttachment; remainingText: string }
-    | { ok: false; error: string }
 
 // ─── 工具函数 ─────────────────────────────────────────────────────────────────
 
-/**
- * 解析 `/image <path> [剩余文本]` 命令。
- *
- * 支持带引号的路径（处理含空格的路径）：
- *   /image "C:\My Pics\a.png" 描述文字
- *   /image ./screenshot.png  （无引号，到第一个空格为止）
- */
-export async function parseImageCommand(
-    input: string,
-): Promise<ParseImageCommandResult> {
-    const trimmed = input.trim()
-    if (!trimmed.startsWith('/image')) {
-        return { ok: false, error: 'Not an /image command' }
-    }
 
-    // 去掉 "/image" 前缀，取剩余部分
-    const rest = trimmed.slice('/image'.length).trim()
-    if (!rest) {
-        return { ok: false, error: 'Usage: /image <path> [description]' }
-    }
-
-    let imagePath: string
-    let remainingText: string
-
-    if (rest.startsWith('"')) {
-        // 带引号路径
-        const closeQuote = rest.indexOf('"', 1)
-        if (closeQuote === -1) {
-            return { ok: false, error: 'Unclosed quote in image path' }
-        }
-        imagePath = rest.slice(1, closeQuote)
-        remainingText = rest.slice(closeQuote + 1).trim()
-    } else {
-        // 无引号：路径到第一个空格为止
-        const spaceIdx = rest.search(/\s/)
-        if (spaceIdx === -1) {
-            imagePath = rest
-            remainingText = ''
-        } else {
-            imagePath = rest.slice(0, spaceIdx)
-            remainingText = rest.slice(spaceIdx).trim()
-        }
-    }
-
-    return loadImageFile(imagePath, remainingText)
-}
 
 /**
  * 加载指定路径的图片文件并返回附件对象。
  */
+type LoadResult =
+    | { ok: true; attachment: ImageAttachment; remainingText: string }
+    | { ok: false; error: string }
+
 async function loadImageFile(
     imagePath: string,
     remainingText: string,
-): Promise<ParseImageCommandResult> {
+): Promise<LoadResult> {
     // 解析扩展名
     const ext = path.extname(imagePath).toLowerCase()
     const mimeType = MIME_MAP[ext]
@@ -203,4 +159,80 @@ export function extractTextFromContent(
         })
         .join('\n')
         .trim()
+}
+
+// ─── 剪贴板图片读取 ───────────────────────────────────────────────────────────
+
+/**
+ * 从系统剪贴板读取图片并返回 ImageAttachment。
+ *
+ * 跨平台支持：
+ *   - macOS:          pngpaste（需预装：brew install pngpaste）
+ *   - Windows:        PowerShell + System.Windows.Forms
+ *   - Linux Wayland:  wl-paste
+ *   - Linux X11:      xclip
+ *
+ * 剪贴板无图片、工具未安装或读取失败时返回 null。
+ */
+export async function readClipboardImage(): Promise<ImageAttachment | null> {
+    const tmpPath = path.join(tmpdir(), `cclin-img-${Date.now()}.png`)
+    try {
+        switch (process.platform) {
+            case 'darwin':
+                execSync(`pngpaste "${tmpPath}"`, { stdio: 'ignore' })
+                break
+            case 'win32': {
+                // 写临时 .ps1 文件，避免 $img/$null 被 shell 插值吃掉
+                const psScript = [
+                    'Add-Type -AssemblyName System.Windows.Forms',
+                    '$img = [System.Windows.Forms.Clipboard]::GetImage()',
+                    'if ($null -eq $img) { exit 1 }',
+                    `$img.Save('${tmpPath.replace(/\\/g, '\\\\')}')`,
+                ].join('\n')
+                const psFile = tmpPath + '.ps1'
+                const { writeFileSync, unlinkSync } = await import('node:fs')
+                writeFileSync(psFile, psScript, 'utf8')
+                try {
+                    execSync(`powershell -NoProfile -Sta -File "${psFile}"`, { stdio: 'ignore' })
+                } finally {
+                    try { unlinkSync(psFile) } catch { /* ignore */ }
+                }
+                break
+            }
+            default: {
+                // Linux: Wayland 优先，回退 X11
+                const wayland = spawnSync('wl-paste', ['--type', 'image/png'])
+                const imgData = wayland.status === 0 && wayland.stdout.length > 0
+                    ? wayland.stdout
+                    : (() => {
+                        const x11 = spawnSync('xclip', ['-selection', 'clipboard', '-t', 'image/png', '-o'])
+                        return x11.status === 0 ? x11.stdout : null
+                    })()
+                if (!imgData || imgData.length === 0) throw new Error('no image data')
+                await writeFile(tmpPath, imgData)
+            }
+        }
+    } catch {
+        return null
+    }
+
+    const result = await loadImageFile(tmpPath, '')
+    if (!result.ok) {
+        void cleanupTmpFile(tmpPath)
+        return null
+    }
+
+    // 标记为临时文件路径，供发送后清理
+    return result.attachment
+}
+
+/**
+ * 删除图片临时文件（在 onSubmit 后调用以释放磁盘空间）。
+ */
+export async function cleanupTmpFile(filePath: string): Promise<void> {
+    try {
+        await unlink(filePath)
+    } catch {
+        // ignore — 文件可能已删除
+    }
 }

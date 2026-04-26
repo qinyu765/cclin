@@ -2,3 +2,10 @@ node_modules/
 dist/
 .env
 tsconfig.tsbuildinfo
+
+# Personal docs & planning (not for public repo)
+docs/
+AGENTS.md
+CLAUDE.md
+GEMINI-CN.md
+PLAN.md

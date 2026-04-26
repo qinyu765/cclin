@@ -1,6 +1,6 @@
 {
   "name": "@hflin/cclin",
-  "version": "0.1.0",
+  "version": "0.11.0",
   "description": "A production-grade CLI Code Agent",
   "type": "module",
   "bin": {

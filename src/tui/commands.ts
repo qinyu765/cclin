@@ -11,7 +11,7 @@
 
 // ─── 类型定义 ──────────────────────────────────────────────────────────────
 
-export type CommandCategory = 'session' | 'config' | 'info' | 'media'
+export type CommandCategory = 'session' | 'config' | 'info'
 
 export interface CommandDef {
     /** 规范名称，不含斜杠（如 "compact"） */
@@ -63,14 +63,6 @@ export const COMMAND_REGISTRY: readonly CommandDef[] = [
         desc: 'Change approval policy',
         category: 'config',
         argsHint: '[auto|manual|never]',
-    },
-    // ── 媒体 ─────────────────────────────────────────────────────────────
-    {
-        name: 'image',
-        slash: '/image',
-        desc: 'Attach an image file',
-        category: 'media',
-        argsHint: '[path]',
     },
     // ── 信息 / 退出 ───────────────────────────────────────────────────────
     {

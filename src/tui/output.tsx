@@ -129,7 +129,7 @@ const StepCell = memo(function StepCell({
                         <Box flexGrow={1}>
                             <Text>
                                 <Text color="gray">Used </Text>
-                                <Text color="cyan">{act.tool}</Text>
+                                <Text bold color="white">{act.tool}</Text>
                                 {param ? <Text color="gray"> ({param})</Text> : null}
                             </Text>
                         </Box>
