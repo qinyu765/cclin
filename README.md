@@ -1,7 +1,4 @@
 # cclin
-
-> 从零构建的生产级 CLI Code Agent，对标 [memo-code](https://github.com/anthropics/claude-code) 架构。
-
 一个运行在终端里的 AI 编程助手，能读写文件、执行命令、调用 MCP 工具，在本地环境中完成软件工程任务。
 
 ## 特性
