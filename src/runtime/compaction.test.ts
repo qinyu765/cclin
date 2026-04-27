@@ -1,12 +1,11 @@
 /**
  * @file Unit tests for context compaction module (Phase 6).
  *
- * Tests: isContextSummaryMessage, buildCompactionUserPrompt, buildCompactedHistory
+ * Tests: buildCompactionUserPrompt, buildCompactedHistory
  */
 
 import { describe, it, expect } from 'vitest'
 import {
-    isContextSummaryMessage,
     buildCompactionUserPrompt,
     buildCompactedHistory,
 } from './compaction.js'
@@ -21,28 +20,7 @@ function msg(
     return { role, content }
 }
 
-function summaryMsg(text: string): ChatMessage {
-    return {
-        role: 'user',
-        content: `Another language model started to solve this problem and produced a summary of its thinking process. Use this summary to continue the task without redoing completed work.\n${text}`,
-    }
-}
-
 // ─── Tests ────────────────────────────────────────────────────────────────────
-
-describe('isContextSummaryMessage', () => {
-    it('should identify summary messages', () => {
-        expect(isContextSummaryMessage(summaryMsg('stuff'))).toBe(true)
-    })
-
-    it('should reject non-summary user messages', () => {
-        expect(isContextSummaryMessage(msg('user', 'hello'))).toBe(false)
-    })
-
-    it('should reject assistant messages', () => {
-        expect(isContextSummaryMessage(msg('assistant', 'sup'))).toBe(false)
-    })
-})
 
 describe('buildCompactionUserPrompt', () => {
     it('should format message transcript correctly', () => {

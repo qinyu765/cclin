@@ -102,18 +102,6 @@ function messageToTranscriptLine(
 
 // ─── 公开 API ────────────────────────────────────────────────────────────────
 
-/**
- * 判断消息是否为之前压缩生成的摘要。
- *
- * 通过检查 user 消息是否以摘要前缀开头来识别。
- * 压缩时需要跳过已有的摘要，避免"摘要套摘要"。
- */
-export function isContextSummaryMessage(message: ChatMessage): boolean {
-    if (message.role !== 'user') return false
-    // 多模态消息（ContentPart[]）不可能是压缩摘要
-    if (typeof message.content !== 'string') return false
-    return message.content.startsWith(`${CONTEXT_SUMMARY_PREFIX}\n`)
-}
 
 /**
  * 构建发给 LLM 的压缩请求（user prompt 部分）。
