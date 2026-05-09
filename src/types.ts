@@ -298,6 +298,16 @@ export type ToolExecutionResult = {
     hasRejection: boolean
 }
 
+/**
+ * 批量工具执行函数签名。
+ *
+ * 用于一次处理模型返回的多个 tool_use block，并由工具编排层决定
+ * 安全并行或串行执行。
+ */
+export type ExecuteTools = (
+    actions: ToolAction[],
+) => Promise<ToolExecutionResult>
+
 // ─── Phase 6: 上下文压缩类型 ────────────────────────────────────────────────
 
 /** Token 计数器接口。 */
@@ -457,10 +467,21 @@ export type ToolSource = 'native' | 'mcp'
 /** MCP Server 认证配置。 */
 export type MCPAuthConfig =
     | { type: 'bearer'; token: string }
+    | { type: 'basic'; username: string; password: string }
     | { type: 'client_credentials'; clientId: string; clientSecret: string }
 
+export type MCPToolConfig = {
+    isMutating?: boolean
+}
+
+export type MCPCommonConfig = {
+    timeoutMs?: number
+    defaultMutating?: boolean
+    tools?: Record<string, MCPToolConfig>
+}
+
 /** stdio 模式配置（本地子进程）。 */
-export type MCPStdioConfig = {
+export type MCPStdioConfig = MCPCommonConfig & {
     /** 启动命令（如 'node', 'npx'）。 */
     command: string
     /** 命令参数列表。 */
@@ -470,7 +491,7 @@ export type MCPStdioConfig = {
 }
 
 /** 远程 HTTP/SSE 模式配置。 */
-export type MCPRemoteConfig = {
+export type MCPRemoteConfig = MCPCommonConfig & {
     /** 远程 Server URL（如 'http://example.com/mcp'）。 */
     url: string
     /** 传输方式：'http'（默认，自动 fallback SSE）或 'sse'（强制）。 */

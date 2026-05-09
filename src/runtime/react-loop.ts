@@ -18,6 +18,9 @@ import type {
     TurnResult,
     TurnStatus,
     ExecuteTool,
+    ExecuteTools,
+    ToolAction,
+    ToolExecutionResult,
     TokenUsage,
     TokenCounter,
     CompactResult,
@@ -133,6 +136,8 @@ export type RunTurnDeps = {
     callLLM: CallLLM
     /** 工具执行函数（Phase 2 默认 mock）。 */
     executeTool?: ExecuteTool
+    /** 批量工具执行函数（支持多工具安全并行）。 */
+    executeTools?: ExecuteTools
     /** Token 计数器（Phase 6，启用压缩必需）。 */
     tokenCounter?: TokenCounter
     /** 上下文窗口大小（token 数）。 */
@@ -161,6 +166,42 @@ const defaultExecuteTool: ExecuteTool = async (
     return `[tool "${toolName}" not implemented yet]`
 }
 
+/** 使用单工具执行函数串行降级为批量执行。 */
+function createDefaultExecuteTools(executeTool: ExecuteTool): ExecuteTools {
+    return async (actions: ToolAction[]): Promise<ToolExecutionResult> => {
+        const results: ToolExecutionResult['results'] = []
+        for (const action of actions) {
+            const startedAt = Date.now()
+            try {
+                const observation = await executeTool(action.name, action.input)
+                results.push({
+                    actionId: action.id,
+                    tool: action.name,
+                    status: 'success' as const,
+                    success: true,
+                    observation,
+                    durationMs: Date.now() - startedAt,
+                })
+            } catch (err) {
+                results.push({
+                    actionId: action.id,
+                    tool: action.name,
+                    status: 'execution_failed' as const,
+                    success: false,
+                    observation: `Tool execution error: ${(err as Error).message}`,
+                    durationMs: Date.now() - startedAt,
+                })
+            }
+        }
+
+        return {
+            results,
+            combinedObservation: results.map((r) => r.observation).join('\n---\n'),
+            hasRejection: results.some((r) => r.status === 'approval_denied'),
+        }
+    }
+}
+
 /**
  * 执行一次 Turn 的 ReAct 循环。
  *
@@ -178,6 +219,7 @@ export async function runTurn(
 ): Promise<TurnResult> {
     const { history, callLLM } = deps
     const executeTool = deps.executeTool ?? defaultExecuteTool
+    const executeTools = deps.executeTools ?? createDefaultExecuteTools(executeTool)
     const { tokenCounter, contextWindow, compactThreshold } = deps
     const { hookRunners, sessionId = '', turnIndex = 0 } = deps
 
@@ -319,9 +361,12 @@ export async function runTurn(
         // 分支判断
         if (parsed.action) {
             // ── Think → Act → Observe ──
-            // 执行所有工具调用（LLM 可能一次返回多个）
-            const observations: string[] = []
-
+            // 执行所有工具调用（LLM 可能一次返回多个）。
+            const actions: ToolAction[] = toolUseBlocks.map((block) => ({
+                id: block.id,
+                name: block.name,
+                input: block.input,
+            }))
             for (const block of toolUseBlocks) {
                 // Phase 7：发射 onAction Hook（替代硬编码 console.log）
                 if (hookRunners) {
@@ -334,13 +379,40 @@ export async function runTurn(
                         history: snapshotHistory(history),
                     })
                 }
+            }
 
-                let observation: string
-                try {
-                    observation = await executeTool(block.name, block.input)
-                } catch (err) {
-                    observation = `Tool execution error: ${(err as Error).message}`
+            let executionResult: ToolExecutionResult
+            try {
+                executionResult = await executeTools(actions)
+            } catch (err) {
+                const observation = `Tool execution error: ${(err as Error).message}`
+                executionResult = {
+                    results: actions.map((action) => ({
+                        actionId: action.id,
+                        tool: action.name,
+                        status: 'execution_failed',
+                        success: false,
+                        observation,
+                        durationMs: 0,
+                    })),
+                    combinedObservation: observation,
+                    hasRejection: false,
                 }
+            }
+
+            const resultById = new Map(
+                executionResult.results.map((result) => [result.actionId, result]),
+            )
+            const observations: string[] = []
+
+            for (const block of toolUseBlocks) {
+                const result = resultById.get(block.id)
+                const observation = result?.observation
+                    ?? (
+                        executionResult.hasRejection
+                            ? `Skipped: "${block.name}" was not executed because a previous tool call was denied.`
+                            : `Skipped: "${block.name}" did not return an execution result.`
+                    )
 
                 observations.push(observation)
 
@@ -365,7 +437,7 @@ export async function runTurn(
                 }
             }
 
-            // 记录第一个工具的 observation（用于 stepTrace）
+            // 记录所有工具的 observation（用于 stepTrace）
             stepTrace.observation = observations.join('\n---\n')
             stepTrace.toolCallCount = toolUseBlocks.length
 

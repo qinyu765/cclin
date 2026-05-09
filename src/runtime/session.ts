@@ -24,6 +24,7 @@ import type {
     ChatMessage,
     TurnResult,
     ExecuteTool,
+    ExecuteTools,
     TokenCounter,
     CompactReason,
     CompactResult,
@@ -44,6 +45,8 @@ export type SessionOptions = {
     systemPrompt?: string
     /** 工具执行函数（可选，Phase 2 默认 mock）。 */
     executeTool?: ExecuteTool
+    /** 批量工具执行函数（可选，支持多工具安全并行）。 */
+    executeTools?: ExecuteTools
     /** 自定义 Session ID（默认随机 UUID）。 */
     sessionId?: string
     /** Token 计数器（Phase 6，启用压缩必需）。 */
@@ -97,6 +100,9 @@ export class Session {
     /** 工具执行函数。 */
     private readonly executeTool?: ExecuteTool
 
+    /** 批量工具执行函数。 */
+    private readonly executeTools?: ExecuteTools
+
     /** Token 计数器。 */
     private readonly tokenCounter?: TokenCounter
 
@@ -122,6 +128,7 @@ export class Session {
         this.id = options.sessionId ?? randomUUID()
         this.callLLM = options.callLLM
         this.executeTool = options.executeTool
+        this.executeTools = options.executeTools
         this.tokenCounter = options.tokenCounter
         this.contextWindow = options.contextWindow ?? 128_000
         this.compactThreshold = options.compactThreshold ?? 80
@@ -164,6 +171,7 @@ export class Session {
             history: this.history,
             callLLM: this.callLLM,
             executeTool: this.executeTool,
+            executeTools: this.executeTools,
             tokenCounter: this.tokenCounter,
             contextWindow: this.contextWindow,
             compactThreshold: this.compactThreshold,
@@ -197,6 +205,18 @@ export class Session {
     /** 返回当前对话历史的副本。 */
     getHistory(): ChatMessage[] {
         return [...this.history]
+    }
+
+    /** 清空对话历史，保留 system prompt。 */
+    clearHistory(): void {
+        const systemMessage =
+            this.history[0]?.role === 'system' ? this.history[0] : undefined
+
+        this.history.splice(
+            0,
+            this.history.length,
+            ...(systemMessage ? [systemMessage] : []),
+        )
     }
 
     /** 获取当前轮次数。 */

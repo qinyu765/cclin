@@ -14,6 +14,7 @@
 
 import type {
     ExecuteTool,
+    ExecuteTools,
     ApprovalHooks,
     ApprovalRequest,
     ToolAction,
@@ -306,6 +307,18 @@ export class ToolOrchestrator {
             }
             const result = await this.executeAction(action, hooks)
             return result.observation
+        }
+    }
+
+    /**
+     * 创建批量工具执行函数。
+     *
+     * 让 ReAct 循环可以一次提交同一条 assistant 消息里的多个 tool_call，
+     * 并复用 executeActions() 的安全并行 / 串行策略。
+     */
+    createExecuteTools(hooks?: ApprovalHooks): ExecuteTools {
+        return async (actions: ToolAction[]): Promise<ToolExecutionResult> => {
+            return this.executeActions(actions, hooks)
         }
     }
 

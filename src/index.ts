@@ -105,6 +105,7 @@ childRouter.registerNativeTools([
 const childApprovalManager = new ApprovalManager({ policy: 'auto' })
 const childOrchestrator = new ToolOrchestrator(childRouter, childApprovalManager)
 const childExecuteTool = childOrchestrator.createExecuteTool()
+const childExecuteTools = childOrchestrator.createExecuteTools()
 
 // 加载 Skills
 const skills = await loadSkills({ cwd: process.cwd() })
@@ -133,6 +134,7 @@ const spawnAgentTool = createSpawnAgentTool({
         return subagentCallLLM
     },
     executeTool: childExecuteTool,
+    executeTools: childExecuteTools,
     systemPrompt,
 })
 // 方案二：异步 Subagent 套件（spawn → send → wait → close）
@@ -142,6 +144,7 @@ const subAgentManager = new SubAgentManager(
         return subagentCallLLM(messages, onChunk)
     },
     childExecuteTool,
+    childExecuteTools,
     systemPrompt,
 )
 const asyncSubAgentTools = createAsyncSubAgentTools(subAgentManager)
@@ -191,7 +194,7 @@ const handleSubmit = async (content: UserContent) => {
 
     // /clear 命令 — 清空当前会话上下文
     if (textInput === '/clear') {
-        session.getHistory().length = 0
+        session.clearHistory()
         return
     }
 
@@ -219,18 +222,21 @@ const handleMiddlewareReady = (mw: AgentMiddleware) => {
     historySink = new JsonlHistorySink(historyFile)
 
     // Session 在中间件就绪后创建
+    const approvalHooks = {
+        requestApproval: (req: ApprovalRequest) => {
+            if (!requestApprovalFn) return Promise.resolve('deny' as const)
+            return requestApprovalFn(req)
+        },
+    }
+
     session = new Session({
         callLLM,
         systemPrompt,
-        executeTool: orchestrator.createExecuteTool({
-            requestApproval: (req) => {
-                if (!requestApprovalFn) return Promise.resolve('deny' as const)
-                return requestApprovalFn(req)
-            },
-        }),
+        executeTool: orchestrator.createExecuteTool(approvalHooks),
+        executeTools: orchestrator.createExecuteTools(approvalHooks),
         tokenCounter,
-        contextWindow: 128_000,
-        compactThreshold: 80,
+        contextWindow: config.context.window,
+        compactThreshold: config.context.compact_threshold,
         middlewares: [mw],
         historySink: historySink ?? undefined,
         clearApprovalsFn: () => orchestrator.clearOnceApprovals(),

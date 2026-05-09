@@ -27,6 +27,7 @@ import { Session } from '../runtime/session.js'
 import type {
     CallLLM,
     ExecuteTool,
+    ExecuteTools,
     SubAgentStatus,
     SubAgentHandle,
     TurnResult,
@@ -58,11 +59,26 @@ export class SubAgentManager {
     /** 所有活跃/已关闭的子 Agent 句柄。 */
     private readonly _handles = new Map<string, InternalHandle>()
 
+    private readonly callLLM: CallLLM
+    private readonly executeTool: ExecuteTool
+    private readonly executeTools: ExecuteTools | undefined
+    private readonly systemPrompt: string | undefined
+
     constructor(
-        private readonly callLLM: CallLLM,
-        private readonly executeTool: ExecuteTool,
-        private readonly systemPrompt?: string,
-    ) {}
+        callLLM: CallLLM,
+        executeTool: ExecuteTool,
+        executeToolsOrSystemPrompt?: ExecuteTools | string,
+        systemPrompt?: string,
+    ) {
+        this.callLLM = callLLM
+        this.executeTool = executeTool
+        this.executeTools = typeof executeToolsOrSystemPrompt === 'function'
+            ? executeToolsOrSystemPrompt
+            : undefined
+        this.systemPrompt = typeof executeToolsOrSystemPrompt === 'string'
+            ? executeToolsOrSystemPrompt
+            : systemPrompt
+    }
 
     // ── spawn ────────────────────────────────────────────────────────────────
 
@@ -89,6 +105,7 @@ export class SubAgentManager {
             sessionId: id,
             callLLM: this.callLLM,
             executeTool: this.executeTool,
+            executeTools: this.executeTools,
             systemPrompt: options?.systemPrompt ?? this.systemPrompt,
             contextWindow: 64_000,
             compactThreshold: 75,

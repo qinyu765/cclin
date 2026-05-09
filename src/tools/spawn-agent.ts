@@ -17,7 +17,13 @@
 
 import { randomUUID } from 'node:crypto'
 import { Session } from '../runtime/session.js'
-import type { ToolDefinition, ToolResult, CallLLM, ExecuteTool } from '../types.js'
+import type {
+    ToolDefinition,
+    ToolResult,
+    CallLLM,
+    ExecuteTool,
+    ExecuteTools,
+} from '../types.js'
 
 /** 子 Agent 输出最大字符数（超过则截断，防止回灌到父 Agent 时撑爆上下文）。 */
 const MAX_RESULT_CHARS = 10_000
@@ -36,6 +42,8 @@ export type SpawnAgentDeps = {
     callLLM: CallLLM
     /** 子 Agent 可用的工具执行函数（建议传入受限工具集）。 */
     executeTool: ExecuteTool
+    /** 子 Agent 可用的批量工具执行函数（可选，支持多工具安全并行）。 */
+    executeTools?: ExecuteTools
     /** 子 Agent 的系统提示词（可传父 Agent 的，也可传精简版）。 */
     systemPrompt?: string
     /** 单次 Turn 最大步骤数（默认 10，防止子 Agent 失控）。 */
@@ -122,6 +130,7 @@ export function createSpawnAgentTool(deps: SpawnAgentDeps): ToolDefinition {
                 sessionId: childId,
                 callLLM: deps.callLLM,
                 executeTool,
+                executeTools: deps.executeTools,
                 systemPrompt,
                 // 子 Agent 用较小的上下文窗口，避免嵌套爆窗
                 contextWindow: 64_000,

@@ -35,6 +35,14 @@ function makeAction(name: string, input: unknown = {}): ToolAction {
     return { id: `${name}:1`, name, input }
 }
 
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+    let resolve!: () => void
+    const promise = new Promise<void>((r) => {
+        resolve = r
+    })
+    return { promise, resolve }
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('ToolOrchestrator', () => {
@@ -98,6 +106,102 @@ describe('ToolOrchestrator', () => {
     })
 
     describe('executeActions', () => {
+        it('should run read-only safe tools in parallel', async () => {
+            approval = new ApprovalManager({ policy: 'auto' })
+            const gate = deferred()
+            const started: string[] = []
+            const readFile = makeTool('read_file', false)
+            const listDirectory = makeTool('list_directory', false)
+            vi.mocked(readFile.execute).mockImplementation(async () => {
+                started.push('read_file')
+                await gate.promise
+                return { output: 'read' }
+            })
+            vi.mocked(listDirectory.execute).mockImplementation(async () => {
+                started.push('list_directory')
+                return { output: 'list' }
+            })
+            orchestrator = new ToolOrchestrator(
+                makeRegistry([readFile, listDirectory]),
+                approval,
+            )
+
+            const pending = orchestrator.executeActions([
+                makeAction('read_file'),
+                makeAction('list_directory'),
+            ])
+            await Promise.resolve()
+
+            expect(started).toEqual(['read_file', 'list_directory'])
+            gate.resolve()
+            const result = await pending
+            expect(result.results).toHaveLength(2)
+        })
+
+        it('should keep mutating tools serial', async () => {
+            approval = new ApprovalManager({ policy: 'auto' })
+            const gate = deferred()
+            const started: string[] = []
+            const first = makeTool('write_file', true)
+            const second = makeTool('edit_file', true)
+            vi.mocked(first.execute).mockImplementation(async () => {
+                started.push('write_file')
+                await gate.promise
+                return { output: 'written' }
+            })
+            vi.mocked(second.execute).mockImplementation(async () => {
+                started.push('edit_file')
+                return { output: 'edited' }
+            })
+            orchestrator = new ToolOrchestrator(
+                makeRegistry([first, second]),
+                approval,
+            )
+
+            const pending = orchestrator.executeActions([
+                makeAction('write_file'),
+                makeAction('edit_file'),
+            ])
+            await Promise.resolve()
+
+            expect(started).toEqual(['write_file'])
+            gate.resolve()
+            await pending
+            expect(started).toEqual(['write_file', 'edit_file'])
+        })
+
+        it('should keep sub-agent lifecycle tools serial', async () => {
+            approval = new ApprovalManager({ policy: 'auto' })
+            const gate = deferred()
+            const started: string[] = []
+            const spawn = makeTool('spawn_agent', false)
+            const send = makeTool('send_input', false)
+            vi.mocked(spawn.execute).mockImplementation(async () => {
+                started.push('spawn_agent')
+                await gate.promise
+                return { output: 'spawned' }
+            })
+            vi.mocked(send.execute).mockImplementation(async () => {
+                started.push('send_input')
+                return { output: 'sent' }
+            })
+            orchestrator = new ToolOrchestrator(
+                makeRegistry([spawn, send]),
+                approval,
+            )
+
+            const pending = orchestrator.executeActions([
+                makeAction('spawn_agent'),
+                makeAction('send_input'),
+            ])
+            await Promise.resolve()
+
+            expect(started).toEqual(['spawn_agent'])
+            gate.resolve()
+            await pending
+            expect(started).toEqual(['spawn_agent', 'send_input'])
+        })
+
         it('should stop on first approval_denied', async () => {
             approval = new ApprovalManager()
             const t1 = makeTool('a', true)
@@ -121,6 +225,18 @@ describe('ToolOrchestrator', () => {
             const exec = orchestrator.createExecuteTool()
             const obs = await exec('list', {})
             expect(obs).toBe('files here')
+        })
+    })
+
+    describe('createExecuteTools', () => {
+        it('should return batch execution result', async () => {
+            approval = new ApprovalManager()
+            const tool = makeTool('list_directory', false, 'files here')
+            orchestrator = new ToolOrchestrator(makeRegistry([tool]), approval)
+            const exec = orchestrator.createExecuteTools()
+            const result = await exec([makeAction('list_directory')])
+            expect(result.results).toHaveLength(1)
+            expect(result.combinedObservation).toBe('files here')
         })
     })
 

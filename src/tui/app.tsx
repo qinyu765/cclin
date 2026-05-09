@@ -208,6 +208,7 @@ export function App({
             if (cmd.name === 'clear') {
                 console.clear()
                 dispatch({ type: 'clear_all' })
+                await onSubmit(input)
                 return
             }
             if (cmd.name === 'model') {

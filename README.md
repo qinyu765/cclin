@@ -134,6 +134,94 @@ pnpm test:watch    # 监视模式
 pnpm typecheck     # TypeScript 类型检查
 ```
 
+## MCP Server 配置
+
+MCP 配置使用独立 JSON 文件 `mcp_config.json`，修改后需要重启 `cclin` 才会重新连接和发现工具。搜索优先级：
+
+1. 项目级：`./mcp_config.json`
+2. 用户级：`$CCLIN_HOME/mcp_config.json`，未设置 `CCLIN_HOME` 时为 `~/.cclin/mcp_config.json`
+
+项目级配置优先于用户级配置，两者不会合并。没有配置文件时不会报错；如果配置文件存在但 JSON 或 schema 无效，启动时会显示明确错误。
+
+本地 stdio MCP Server 示例：
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_xxx"
+      },
+      "timeoutMs": 30000
+    }
+  }
+}
+```
+
+远程 HTTP/SSE MCP Server 示例：
+
+```json
+{
+  "mcpServers": {
+    "remote_api": {
+      "url": "https://mcp.example.com/mcp",
+      "transport": "http",
+      "headers": {
+        "X-Custom": "value"
+      },
+      "auth": {
+        "type": "bearer",
+        "token": "sk-xxx"
+      },
+      "timeoutMs": 30000
+    },
+    "legacy_sse": {
+      "url": "https://mcp.example.com/sse",
+      "transport": "sse",
+      "auth": {
+        "type": "basic",
+        "username": "client",
+        "password": "secret"
+      }
+    }
+  }
+}
+```
+
+配置规则：
+
+- 每个 server 必须且只能设置 `command` 或 `url` 之一。
+- `args` 必须是字符串数组，`env` / `headers` 必须是字符串字典。
+- `transport` 只能是 `http` 或 `sse`；不写时默认先尝试 StreamableHTTP，失败后自动 fallback 到 SSE。
+- `auth.type = "bearer"` 会生成 `Authorization: Bearer ...`。
+- `auth.type = "basic"` 会生成 Basic Auth；旧的 `client_credentials` 仍兼容，但只是 Basic Auth 别名，不会执行 OAuth token 交换。
+- MCP 工具名会注册为 `serverName_toolName`，例如 `github_search`。
+- MCP 工具默认视为 `isMutating: true`，会进入审批流程。可通过 `defaultMutating` 和工具级覆盖调整：
+
+```json
+{
+  "mcpServers": {
+    "docs": {
+      "command": "node",
+      "args": ["./docs-mcp.js"],
+      "defaultMutating": false,
+      "tools": {
+        "delete_page": { "isMutating": true }
+      }
+    }
+  }
+}
+```
+
+常见排查：
+
+- 启动日志出现 `Invalid MCP config JSON`：检查 `mcp_config.json` 是否为合法 JSON。
+- 出现 `must define exactly one of "command" or "url"`：同一个 server 不能同时配置本地和远程连接。
+- 远程连接日志出现 `falling back to SSE`：HTTP 握手失败，客户端已自动尝试 SSE。
+- 工具未出现：确认 MCP Server 的 `listTools()` 返回工具，并查看启动日志中该 server 加载了多少工具。
+
 ## License
 
 MIT
